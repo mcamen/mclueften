@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lüftungshelfer – Taupunktvergleich</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --blue: #1d4ed8; --orange: #c2410c; --green: #15803d; --red: #b91c1c;
+            --bg: #f8fafc; --surface: #fff; --border: #e2e8f0;
+            --text: #1e293b; --muted: #64748b;
+            --r: 12px; --sh: 0 1px 4px rgba(0,0,0,.08),0 0 0 1px rgba(0,0,0,.04);
+        }
+        body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; line-height:1.5; }
+        .header { background:linear-gradient(135deg,#1e40af,#2563eb); color:#fff; padding:1.75rem 2rem 1.4rem; }
+        .header h1 { font-size:1.55rem; font-weight:800; letter-spacing:-.02em; }
+        .header p  { margin-top:.3rem; opacity:.82; font-size:.88rem; max-width:560px; }
+        .layout { max-width:960px; margin:0 auto; padding:1.4rem 1.2rem; display:grid; gap:1rem; }
+        .card { background:var(--surface); border-radius:var(--r); box-shadow:var(--sh); padding:1.35rem 1.45rem; }
+        .card-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:.95rem; }
+
+        /* input */
+        .input-row { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; }
+        .input-row label { font-weight:600; font-size:.95rem; }
+        .tin { display:flex; align-items:center; gap:.4rem; background:var(--bg); border:2px solid var(--border); border-radius:8px; padding:.32rem .6rem; transition:border-color .15s; }
+        .tin:focus-within { border-color:var(--blue); }
+        .tin input { border:none; background:transparent; font-size:1.2rem; font-weight:700; width:68px; text-align:right; outline:none; color:var(--text); }
+        .tin span { color:var(--muted); font-size:1rem; }
+        .btn { background:var(--blue); color:#fff; border:none; border-radius:8px; padding:.48rem 1.2rem; font-size:.9rem; font-weight:700; cursor:pointer; transition:background .15s,transform .1s; }
+        .btn:hover { background:#1e40af; }
+        .btn:active { transform:scale(.98); }
+        .btn:disabled { background:var(--border); color:var(--muted); cursor:default; }
+        .btn-sm { background:var(--blue); color:#fff; border:none; border-radius:6px; padding:.38rem .85rem; font-size:.85rem; font-weight:600; cursor:pointer; }
+        .btn-sm:hover { background:#1e40af; }
+
+        /* location */
+        .loc-info { margin-top:.75rem; font-size:.82rem; color:var(--muted); display:flex; align-items:center; gap:.5rem; }
+        .loc-info.err { color:var(--red); }
+        .city-search { display:none; margin-top:.7rem; gap:.5rem; flex-wrap:wrap; align-items:center; }
+        .city-search.show { display:flex; }
+        .city-search input { border:2px solid var(--border); border-radius:8px; padding:.38rem .65rem; font-size:.88rem; outline:none; transition:border-color .15s; min-width:190px; }
+        .city-search input:focus { border-color:var(--blue); }
+        .sel { border:2px solid var(--border); border-radius:8px; padding:.38rem .55rem; font-size:.88rem; font-weight:600; background:var(--bg); color:var(--text); outline:none; cursor:pointer; transition:border-color .15s; }
+        .sel:focus { border-color:var(--blue); }
+
+        /* profile sliders */
+        .prof-row { display:flex; align-items:center; gap:.8rem; margin-top:.65rem; }
+        .prof-row:first-of-type { margin-top:0; }
+        .prof-row > label { flex:0 0 148px; font-size:.86rem; font-weight:600; line-height:1.25; }
+        .prof-hint { display:block; font-weight:400; font-size:.71rem; color:var(--muted); margin-top:.1rem; }
+        .prof-row input[type=range] { flex:1; min-width:90px; accent-color:var(--blue); cursor:pointer; }
+        .prof-val { flex:0 0 26px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; color:var(--blue); }
+
+        /* stats */
+        .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:.7rem; margin-bottom:.9rem; }
+        .stat { background:var(--bg); border-radius:10px; padding:.85rem .7rem; text-align:center; }
+        .stat-v { font-size:1.65rem; font-weight:800; line-height:1; letter-spacing:-.03em; }
+        .stat-l { margin-top:.28rem; font-size:.72rem; color:var(--muted); font-weight:500; }
+
+        /* recommendation */
+        .rec { padding:.85rem 1rem; border-radius:8px; font-weight:600; font-size:.95rem; display:flex; align-items:flex-start; gap:.6rem; }
+        .rec .ico { font-size:1.15rem; flex-shrink:0; margin-top:.05rem; }
+        .rec-open    { background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; }
+        .rec-close   { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
+        .rec-neutral { background:#fefce8; color:#854d0e; border:1px solid #fde68a; }
+
+        /* chart */
+        .chart-wrap { position:relative; height:280px; }
+        .legend { margin-top:.7rem; font-size:.77rem; color:var(--muted); display:flex; gap:1.2rem; flex-wrap:wrap; }
+        .legend-item { display:flex; align-items:center; gap:.35rem; }
+        .dot { display:inline-block; width:12px; height:12px; border-radius:2px; }
+
+        /* schedule */
+        .sched-list { display:flex; flex-direction:column; gap:.4rem; }
+        .sched-item { display:flex; align-items:center; gap:.7rem; padding:.5rem .8rem; border-radius:7px; font-size:.87rem; }
+        .sched-open  { background:#f0fdf4; color:#166534; }
+        .sched-close { background:#fef2f2; color:#991b1b; }
+        .sched-time { font-weight:700; font-variant-numeric:tabular-nums; min-width:160px; }
+        .sched-dp   { opacity:.75; font-size:.81rem; }
+
+        /* info */
+        .info { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:.8rem .95rem; font-size:.82rem; color:#1e40af; line-height:1.65; }
+
+        /* spinner */
+        .spin { display:inline-block; width:13px; height:13px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:sp .7s linear infinite; flex-shrink:0; }
+        @keyframes sp { to { transform:rotate(360deg); } }
+
+        @media(max-width:600px) {
+            .header { padding:1.2rem 1rem; }
+            .layout { padding:1rem .75rem; }
+            .card   { padding:1rem .95rem; }
+        }
+    </style>
+</head>
+<body>
+
+<header class="header">
+    <h1>Lüftungshelfer</h1>
+    <p>Vergleicht Temperatur und Taupunkt deiner Wohnung mit der Außenluft und empfiehlt, wann Lüften Hitze und Feuchte senkt.</p>
+</header>
+
+<div class="layout">
+
+    <!-- Eingabe -->
+    <div class="card">
+        <div class="card-title">Eingabe</div>
+        <div class="input-row">
+            <label for="t-in">Aktuelle Innentemperatur</label>
+            <div class="tin">
+                <input type="number" id="t-in" value="26" min="5" max="50" step="0.5">
+                <span>°C</span>
+            </div>
+            <button class="btn" id="btn-calc" onclick="calculate()" disabled>Berechnen</button>
+        </div>
+        <div class="input-row" style="margin-top:.7rem">
+            <label for="src">Datenquelle</label>
+            <select id="src" class="sel" onchange="changeSource()">
+                <option value="dwd" selected>DWD (via Brightsky, nur DE)</option>
+                <option value="open-meteo">Open-Meteo</option>
+            </select>
+        </div>
+        <div class="loc-info" id="loc-info">
+            <span class="spin"></span><span>Standort wird ermittelt …</span>
+        </div>
+        <div class="city-search show" id="city-search">
+            <span style="font-size:.84rem;font-weight:600">Ort ändern:</span>
+            <input type="text" id="city-in" placeholder="z.B. Wien, München, Zürich" value="Tübingen">
+            <button class="btn-sm" onclick="searchCity()">Suchen</button>
+        </div>
+    </div>
+
+    <!-- Wohnungs-Profil -->
+    <div class="card">
+        <div class="card-title">Wohnungs-Profil</div>
+        <div class="prof-row">
+            <label for="preset">Vorlage</label>
+            <select id="preset" class="sel" onchange="applyPreset()">
+                <option value="meine" selected>Meine Wohnung (42 m², Sonnenseite, Rolladen zu)</option>
+                <option value="gedaemmt">Gut gedämmt &amp; verschattet</option>
+                <option value="standard">Standard</option>
+                <option value="dachgeschoss">Dachgeschoss / Südseite</option>
+                <option value="betrieb">Viel Betrieb (Kochen, 2 Pers.)</option>
+                <option value="custom">Eigene Einstellung</option>
+            </select>
+        </div>
+        <div class="prof-row">
+            <label for="sl-inertia">Wärmeträgheit<span class="prof-hint">träge &amp; kühl ↔ heizt schnell auf</span></label>
+            <input type="range" id="sl-inertia" min="1" max="10" value="3" oninput="onSlider()">
+            <span class="prof-val" id="sl-inertia-v">3</span>
+        </div>
+        <div class="prof-row">
+            <label for="sl-load">Innere Last<span class="prof-hint">1 Person ruhig ↔ mehrere / Kochen</span></label>
+            <input type="range" id="sl-load" min="1" max="10" value="2" oninput="onSlider()">
+            <span class="prof-val" id="sl-load-v">2</span>
+        </div>
+    </div>
+
+    <!-- Status -->
+    <div class="card" id="card-status" style="display:none">
+        <div class="card-title">Aktueller Status</div>
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-v" id="v-idp" style="color:var(--orange)">–</div>
+                <div class="stat-l">Taupunkt Innen o. Lüften (°C)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-v" id="v-odp" style="color:var(--blue)">–</div>
+                <div class="stat-l">Taupunkt Außen (°C)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-v" id="v-it">–</div>
+                <div class="stat-l">Temperatur Innen (°C)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-v" id="v-ot">–</div>
+                <div class="stat-l">Temperatur Außen (°C)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-v" id="v-irh" style="color:var(--orange)">–</div>
+                <div class="stat-l">Rel. Feuchte Innen (%)</div>
+            </div>
+            <div class="stat">
+                <div class="stat-v" id="v-orh" style="color:var(--blue)">–</div>
+                <div class="stat-l">Rel. Feuchte Außen (%)</div>
+            </div>
+        </div>
+        <div class="rec" id="rec">–</div>
+    </div>
+
+    <!-- Diagramm -->
+    <div class="card" id="card-chart" style="display:none">
+        <div class="card-title">Taupunkt-Verlauf (nächste 24 h)</div>
+        <div class="chart-wrap"><canvas id="dp-chart"></canvas></div>
+        <div class="legend">
+            <span class="legend-item"><span class="dot" style="background:rgba(21,128,61,.18)"></span>Lüften lohnt sich (kühler &amp; nicht feuchter)</span>
+            <span class="legend-item"><span class="dot" style="background:rgba(185,28,28,.1)"></span>Fenster zu</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
+        </div>
+    </div>
+
+    <!-- Temperatur-Diagramm -->
+    <div class="card" id="card-temp" style="display:none">
+        <div class="card-title">Temperatur-Verlauf (nächste 24 h)</div>
+        <div class="chart-wrap"><canvas id="t-chart"></canvas></div>
+        <div class="legend">
+            <span class="legend-item"><span class="dot" style="background:#ea580c"></span>Innen ohne Lüften</span>
+            <span class="legend-item"><span class="dot" style="background:#2563eb"></span>Außen (Live-Quelle)</span>
+            <span class="legend-item"><span class="dot" style="background:rgba(21,128,61,.18)"></span>Lüften lohnt sich</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
+        </div>
+    </div>
+
+    <!-- Lüftungsplan -->
+    <div class="card" id="card-sched" style="display:none">
+        <div class="card-title">Lüftungsplan (nächste 24 h)</div>
+        <div class="sched-list" id="sched-list"></div>
+    </div>
+
+    <!-- Info -->
+    <div class="info">
+        <strong>Modell-Annahmen:</strong> Kleine Wohnung (~40 m², 2,5 m Deckenhöhe = 100 m³).
+        Die Diagramme zeigen ein <strong>rollendes 24-h-Fenster ab jetzt</strong> (läuft über Mitternacht weiter),
+        die Innen-Kurven die <strong>freilaufende Prognose „ohne Lüften"</strong> – also wie warm und feucht
+        es würde, wenn die Fenster geschlossen blieben. Wärme- und Feuchtelast sind über das
+        <strong>Wohnungs-Profil</strong> (Vorlagen oder Slider „Wärmeträgheit" und „Innere Last") einstellbar;
+        deine eingegebene Innentemperatur dient als Kalibrierungsanker für die aktuelle Stunde.
+        <strong>Lüften lohnt sich (grüne Zone), wenn die Außenluft kühler UND nicht feuchter ist</strong> – dann senkt
+        Lüften sowohl Temperatur als auch Feuchte. Im Hochsommer trifft das typischerweise nachts/früh morgens zu,
+        tagsüber bringt offenes Fenster nur Hitze herein. Durch Lüften kühlt die Wohnung dabei höchstens bis auf die
+        gleichzeitige Außentemperatur ab.
+        <strong>Datenquellen:</strong> <a href="https://brightsky.dev" style="color:inherit">DWD via Brightsky</a>
+        (Standard, Deutscher Wetterdienst, Abdeckung v. a. Deutschland) oder
+        <a href="https://open-meteo.com" style="color:inherit">Open-Meteo</a>. Standort-Standard: Tübingen.
+        Daten werden alle 30 min aktualisiert; Ort, Quelle und Profil bleiben gespeichert.
+    </div>
+
+</div>
+
+<script>
+// ── Physik ────────────────────────────────────────────────────
+function dewPoint(T, RH) {
+    RH = Math.max(0.1, Math.min(100, RH));
+    const a = 17.625, b = 243.04;
+    const g = Math.log(RH / 100) + a * T / (b + T);
+    return b * g / (a - g);
+}
+
+function absHum(T, RH) {   // g/m³
+    const Pws = 6.112 * Math.exp(17.67 * T / (T + 243.5));
+    return 216.7 * (RH / 100 * Pws) / (273.15 + T);
+}
+
+function relHum(T, AH) {   // % aus AH (g/m³) und T (°C)
+    const Pws = 6.112 * Math.exp(17.67 * T / (T + 243.5));
+    return Math.min(100, AH * (273.15 + T) / (216.7 * Pws) * 100);
+}
+
+function rhFromDew(T, Td) {   // % aus Temperatur und Taupunkt (°C)
+    const a = 17.625, b = 243.04;
+    const rh = 100 * Math.exp((a * Td / (b + Td)) - (a * T / (b + T)));
+    return Math.max(0, Math.min(100, rh));
+}
+
+// ── Innen-Simulation (freilaufend, ohne Lüften) ───────────────
+// Einstellbares Wohnungs-Profil (über die Slider veränderbar):
+const profile = {
+    kT:      0.12,   // thermische Kopplung Außen→Innen (klein = träge/kühl)
+    GAIN:    0.10,   // °C/h innere Wärmelast (Person + Geräte)
+    INFILTR: 0.30,   // Luftwechsel/h bei geschlossenem Fenster
+    MOISTURE:0.50    // g/m³/h Feuchteabgabe (Person/Kochen …)
+};
+
+// outT/outRH sind die VOLLEN Arrays; anchorIdx = Index der aktuellen Stunde
+// (Kalibrierungsanker). Die Simulation läuft über den ganzen Bereich, damit
+// sie bis „jetzt" eingeschwungen ist; das Anzeige-Fenster wird später geschnitten.
+function simulate(outT, outRH, userT, anchorIdx) {
+    const n = outT.length;
+    const { kT, GAIN, INFILTR, MOISTURE } = profile;
+    const outAH = outT.map((t, i) => absHum(t, outRH[i]));
+    const outDP = outT.map((t, i) => dewPoint(t, outRH[i]));
+
+    // ── Innenklima OHNE Lüften (freilaufende Referenz) ──
+    // Bezugsfrage: „Wie warm/feucht würde es, wenn die Fenster geschlossen
+    // blieben?" Diese Referenz nimmt KEINE Lüftung vorweg (nicht zirkulär)
+    // und ist die ehrliche Basis für „lohnt sich Lüften?". Ob Lüften nützt,
+    // entscheidet anschließend der Vergleich mit der Außenluft (kühler/trockener);
+    // abkühlen kann die Wohnung dabei höchstens bis auf die Außentemperatur.
+    const inT = new Array(n);
+    inT[0] = outT[0] + 1.0;
+    for (let h = 1; h < n; h++)
+        inT[h] = inT[h-1] + kT * (outT[h] - inT[h-1]) + GAIN;
+
+    // Kalibrierung: gemessene Innentemperatur als Anker für die aktuelle Stunde
+    const offT = userT - inT[anchorIdx];
+    for (let h = 0; h < n; h++) inT[h] += offT;
+
+    // ── Innere absolute Feuchte ohne Lüften ──
+    // Person gibt Feuchte ab (+MOISTURE/h), Grundinfiltration gleicht langsam
+    // Richtung Außenluft aus → Gleichgewicht ≈ Außen + MOISTURE/INFILTR.
+    const inAH = new Array(n);
+    inAH[0] = outAH[0] + MOISTURE / INFILTR;
+    for (let h = 1; h < n; h++)
+        inAH[h] = inAH[h-1] + MOISTURE - INFILTR * (inAH[h-1] - outAH[h]);
+
+    const inRH = inT.map((t, i) => relHum(t, inAH[i]));
+    const inDP = inT.map((t, i) => dewPoint(t, inRH[i]));
+
+    return { inT, inRH, inDP, outDP, outAH, inAH };
+}
+
+// ── State ─────────────────────────────────────────────────────
+let wx = null, dpChart = null, tChart = null;
+let loc = null;            // aktueller Standort { lat, lon, name }
+let source = 'dwd';        // gewählte Datenquelle
+let srcLabel = 'DWD';
+let nowPos = 0;            // Position der „Jetzt"-Linie im 24-h-Fenster (0…23)
+let lastFetch = null;      // Zeitpunkt des letzten Datenabrufs
+
+// Standard-Standort: Tübingen
+const DEFAULT_LOC = { lat: 48.52, lon: 9.06, name: 'Tübingen' };
+
+// ── Lüftungs-Entscheidung ─────────────────────────────────────
+// Lüften lohnt sich, wenn die Außenluft das Raumklima verbessert:
+// kühler (Abkühlung) UND nicht feuchter (kein Feuchteeintrag).
+const T_TOL = 0.5, DP_TOL = 0.5;
+function ventBenefit(it, ot, idp, odp) {
+    const cooler     = ot < it - T_TOL;     // außen kühler als innen
+    const notHumider = odp < idp + DP_TOL;  // außen nicht feuchter als innen
+    return cooler && notHumider;
+}
+
+// Grüne/rote Hintergrundzonen aus einem Lüften-ja/nein-Array
+function zonePlugin(vent) {
+    return {
+        id: 'zones',
+        beforeDraw(chart) {
+            const { ctx: c, chartArea: ca } = chart;
+            if (!ca) return;
+            const n = vent.length, step = (ca.right - ca.left) / (n - 1);
+            c.save();
+            for (let i = 0; i < n; i++) {
+                const cx = ca.left + i * step;
+                const x1 = Math.max(ca.left, cx - step / 2);
+                const x2 = Math.min(ca.right, cx + step / 2);
+                c.fillStyle = vent[i] ? 'rgba(21,128,61,.12)' : 'rgba(185,28,28,.07)';
+                c.fillRect(x1, ca.top, x2 - x1, ca.height);
+            }
+            c.restore();
+        }
+    };
+}
+
+// gestrichelte "Jetzt"-Linie als wiederverwendbares Plugin
+// nowPos ist die fraktionale Stunde im Fenster (0 = aktuelle Stunde links).
+const nowLinePlugin = {
+    id: 'nowline',
+    afterDraw(chart) {
+        const { ctx: c, chartArea: ca } = chart;
+        if (!ca) return;
+        const step = (ca.right - ca.left) / 23;   // 24 Punkte ⇒ 23 Intervalle
+        const nx = ca.left + Math.max(0, Math.min(23, nowPos)) * step;
+        c.save();
+        c.beginPath();
+        c.strokeStyle = 'rgba(30,30,30,.45)';
+        c.lineWidth = 1.5;
+        c.setLineDash([4, 4]);
+        c.moveTo(nx, ca.top);
+        c.lineTo(nx, ca.bottom);
+        c.stroke();
+        c.restore();
+    }
+};
+
+// ── API ───────────────────────────────────────────────────────
+// Quellen liefern alle dieselbe Struktur:
+// { hourly: { time:[…], temperature_2m:[…], relative_humidity_2m:[…] } }
+const SRC_LABEL = { 'open-meteo': 'Open-Meteo', 'dwd': 'DWD' };
+
+async function fetchWeather(lat, lon) {
+    return source === 'dwd' ? fetchBrightsky(lat, lon) : fetchOpenMeteo(lat, lon);
+}
+
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+async function fetchOpenMeteo(lat, lon) {
+    // 48 h (heute + morgen) für ein rollendes Fenster ab „jetzt"
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+            + `&hourly=temperature_2m,relative_humidity_2m`
+            + `&forecast_days=2&timezone=auto`;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('Open-Meteo-Daten nicht verfügbar');
+    return r.json();
+}
+
+// DWD via Brightsky (api.brightsky.dev) – DWD MOSMIX/Beobachtungen als JSON.
+// Stationsbasiert: Abdeckung v.a. Deutschland & Umgebung.
+async function fetchBrightsky(lat, lon) {
+    const now = new Date();
+    const endDay = new Date(now.getTime() + 2 * 864e5);   // last_date ist exklusiv ⇒ +2 Tage
+    const u = `https://api.brightsky.dev/weather?lat=${lat}&lon=${lon}`
+            + `&date=${ymd(now)}&last_date=${ymd(endDay)}&tz=Europe%2FBerlin`;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('DWD-Daten (Brightsky) nicht verfügbar');
+    const j = await r.json();
+    const w = (j.weather || []).slice(0, 48);
+    if (!w.length) throw new Error('Keine DWD-Daten für diesen Ort (außerhalb der DWD-Abdeckung?)');
+    const time = [], temperature_2m = [], relative_humidity_2m = [];
+    for (const rec of w) {
+        time.push(rec.timestamp);
+        temperature_2m.push(rec.temperature);
+        // Brightsky liefert relative_humidity; falls leer, aus Taupunkt rechnen
+        let rh = rec.relative_humidity;
+        if ((rh == null) && rec.dew_point != null && rec.temperature != null)
+            rh = rhFromDew(rec.temperature, rec.dew_point);
+        relative_humidity_2m.push(rh);
+    }
+    if (temperature_2m.some(v => v == null) || relative_humidity_2m.some(v => v == null))
+        throw new Error('DWD-Daten unvollständig – versuche Open-Meteo');
+    return { hourly: { time, temperature_2m, relative_humidity_2m } };
+}
+
+async function geocode(city) {
+    const u = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de&format=json`;
+    const d = await (await fetch(u)).json();
+    if (!d.results?.length) throw new Error(`Ort „${city}" nicht gefunden`);
+    return { lat: d.results[0].latitude, lon: d.results[0].longitude, name: d.results[0].name };
+}
+
+// ── UI-Helfer ─────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const fmt = v => (+v).toFixed(1);
+
+function setLoc(msg, err = false, spin = false) {
+    const el = $('loc-info');
+    el.className = 'loc-info' + (err ? ' err' : '');
+    el.innerHTML = (spin ? '<span class="spin"></span>' : '') + `<span>${msg}</span>`;
+}
+
+function showRec(it, ot, idp, odp) {
+    const el = $('rec');
+    const dT = ot - it, dDP = odp - idp;
+    const cooler = ot < it - T_TOL, notHumider = odp < idp + DP_TOL;
+    if (cooler && notHumider) {
+        el.className = 'rec rec-open';
+        el.innerHTML = `<span class="ico">✅</span><span>Jetzt lüften! Außen ist <strong>${fmt(-dT)} °C kühler</strong> und nicht feuchter (Taupunkt ${dDP >= 0 ? '+' : ''}${fmt(dDP)} °C) – das senkt Temperatur und Feuchte.</span>`;
+    } else if (!cooler) {
+        el.className = 'rec rec-close';
+        el.innerHTML = `<span class="ico">🚫</span><span>Fenster geschlossen lassen. Außen ist <strong>${fmt(dT)} °C wärmer</strong> – Lüften würde Hitze hereinholen.</span>`;
+    } else {
+        el.className = 'rec rec-neutral';
+        el.innerHTML = `<span class="ico">⚖️</span><span>Grenzfall: Außen ${fmt(-dT)} °C kühler, aber feuchter (Taupunkt +${fmt(dDP)} °C). Kurzes Stoßlüften kühlt, bringt aber etwas Feuchte herein.</span>`;
+    }
+}
+
+function buildSched(labels, inT, outT, inDP, outDP, vent) {
+    const list = $('sched-list');
+    list.innerHTML = '';
+    const slots = [];
+    for (let h = 0; h < 24; h++) {
+        const open = vent[h];
+        const last = slots[slots.length - 1];
+        if (last && last.open === open) { last.end = h + 1; }
+        else slots.push({ start: h, end: h + 1, open });
+    }
+    for (const s of slots) {
+        const mid = Math.floor((s.start + s.end - 1) / 2);
+        const dT  = outT[mid]  - inT[mid];
+        const dDP = outDP[mid] - inDP[mid];
+        // Uhrzeiten aus den Fenster-Labels (laufen über Mitternacht korrekt weiter)
+        const t1 = labels[s.start];
+        const t2 = s.end < labels.length ? labels[s.end] : labels[0];
+        const div = document.createElement('div');
+        div.className = `sched-item ${s.open ? 'sched-open' : 'sched-close'}`;
+        div.innerHTML = `<span class="sched-time">${s.open ? '🌬️ Lüften' : '🪟 Schließen'} &nbsp;${t1}–${t2}</span>`
+                      + `<span class="sched-dp">Δ Temp ${dT >= 0 ? '+' : ''}${fmt(dT)} °C · Δ Taupunkt ${dDP >= 0 ? '+' : ''}${fmt(dDP)} °C (Außen−Innen)</span>`;
+        list.appendChild(div);
+    }
+}
+
+function buildChart(labels, inDP, outDP, vent) {
+    const ctx = $('dp-chart').getContext('2d');
+    if (dpChart) dpChart.destroy();
+
+    dpChart = new Chart(ctx, {
+        type: 'line',
+        plugins: [zonePlugin(vent), nowLinePlugin],
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Taupunkt Innen (ohne Lüften)',
+                    data: inDP.map(v => +v.toFixed(1)),
+                    borderColor: '#ea580c', pointBackgroundColor: '#ea580c',
+                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
+                },
+                {
+                    label: `Taupunkt Außen (${srcLabel})`,
+                    data: outDP.map(v => +v.toFixed(1)),
+                    borderColor: '#2563eb', pointBackgroundColor: '#2563eb',
+                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.parsed.y} °C`,
+                        afterBody: items => {
+                            const i = items[0].dataIndex;
+                            const d = outDP[i] - inDP[i];
+                            return [
+                                `Δ Taupunkt (Außen−Innen): ${d >= 0 ? '+' : ''}${d.toFixed(1)} °C`,
+                                vent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
+                y: { title: { display: true, text: 'Taupunkt (°C)' }, grid: { color: 'rgba(0,0,0,.05)' } }
+            }
+        }
+    });
+}
+
+function buildTempChart(labels, inT, outT, vent) {
+    const ctx = $('t-chart').getContext('2d');
+    if (tChart) tChart.destroy();
+
+    tChart = new Chart(ctx, {
+        type: 'line',
+        plugins: [zonePlugin(vent), nowLinePlugin],
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Temperatur Innen (ohne Lüften)',
+                    data: inT.map(v => +v.toFixed(1)),
+                    borderColor: '#ea580c', pointBackgroundColor: '#ea580c',
+                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
+                },
+                {
+                    label: `Temperatur Außen (${srcLabel})`,
+                    data: outT.map(v => +v.toFixed(1)),
+                    borderColor: '#2563eb', pointBackgroundColor: '#2563eb',
+                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.parsed.y} °C`,
+                        afterBody: items => {
+                            const i = items[0].dataIndex;
+                            const d = outT[i] - inT[i];
+                            return [
+                                `Δ Temp (Außen−Innen): ${d >= 0 ? '+' : ''}${d.toFixed(1)} °C`,
+                                vent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
+                y: { title: { display: true, text: 'Temperatur (°C)' }, grid: { color: 'rgba(0,0,0,.05)' } }
+            }
+        }
+    });
+}
+
+// ── Haupt-Berechnung ─────────────────────────────────────────
+function calculate() {
+    if (!wx) return;
+    const userT = parseFloat($('t-in').value);
+    if (isNaN(userT) || userT < 5 || userT > 50) {
+        alert('Bitte eine gültige Temperatur zwischen 5 und 50 °C eingeben.');
+        return;
+    }
+
+    const h   = wx.hourly;
+    const tF  = h.temperature_2m, rhF = h.relative_humidity_2m, timeF = h.time;
+    const len = tF.length;
+
+    // Rollendes Fenster: 24 h ab der aktuellen Stunde (über Mitternacht hinaus).
+    const nowDate = new Date();
+    const startIdx = Math.max(0, Math.min(nowDate.getHours(), len - 24));
+
+    // Simulation über den vollen Bereich (eingeschwungen), Anker = aktuelle Stunde
+    const sim = simulate(tF, rhF, userT, startIdx);
+    const ventF = sim.inT.map((_, i) => ventBenefit(sim.inT[i], tF[i], sim.inDP[i], sim.outDP[i]));
+
+    // Anzeige-Fenster ausschneiden
+    const cut = a => a.slice(startIdx, startIdx + 24);
+    const labels = cut(timeF).map(t => t.slice(11, 16));
+    const inT  = cut(sim.inT),  inRH = cut(sim.inRH), inDP = cut(sim.inDP);
+    const outT = cut(tF), outRH = cut(rhF), outDP = cut(sim.outDP);
+    const vent = cut(ventF);
+
+    // Position der „Jetzt"-Linie im Fenster (Index 0 = aktuelle Stunde)
+    nowPos = (nowDate.getHours() - startIdx) + nowDate.getMinutes() / 60;
+
+    // Aktuelle Stunde = Fenster-Index 0
+    $('v-idp').textContent = fmt(inDP[0]);
+    $('v-odp').textContent = fmt(outDP[0]);
+    $('v-it').textContent  = fmt(userT);
+    $('v-ot').textContent  = fmt(outT[0]);
+    $('v-irh').textContent = fmt(inRH[0]);
+    $('v-orh').textContent = fmt(outRH[0]);
+
+    showRec(inT[0], outT[0], inDP[0], outDP[0]);
+    buildChart(labels, inDP, outDP, vent);
+    buildTempChart(labels, inT, outT, vent);
+    buildSched(labels, inT, outT, inDP, outDP, vent);
+
+    $('card-status').style.display = '';
+    $('card-chart').style.display  = '';
+    $('card-temp').style.display   = '';
+    $('card-sched').style.display  = '';
+
+    saveState();
+}
+
+// ── Wohnungs-Profil (Slider → Modellparameter) ────────────────
+const PRESETS = {
+    // 1 Person, 42 m² (~105 m³), Sonnenseite + viele Fenster, aber Rolladen zu
+    // (blockt die Sonne stark) und ~30 Jahre altes Haus ⇒ moderate Trägheit;
+    // 1 ruhige Person ⇒ geringe innere Last.
+    meine:        { i: 3, l: 2 },
+    gedaemmt:     { i: 2, l: 3 },
+    standard:     { i: 3, l: 3 },
+    dachgeschoss: { i: 8, l: 4 },
+    betrieb:      { i: 4, l: 8 }
+};
+
+function applyProfile() {
+    const iv = +$('sl-inertia').value, lv = +$('sl-load').value;
+    profile.kT       = 0.06 + (iv - 1) / 9 * 0.28;   // 0.06 … 0.34 (Trägheit)
+    profile.GAIN     = 0.04 + (lv - 1) / 9 * 0.24;   // 0.04 … 0.28 °C/h
+    profile.MOISTURE = 0.30 + (lv - 1) / 9 * 1.00;   // 0.30 … 1.30 g/m³/h
+    profile.INFILTR  = 0.30;
+    $('sl-inertia-v').textContent = iv;
+    $('sl-load-v').textContent = lv;
+    if (wx) calculate(); else saveState();   // calculate() speichert ebenfalls
+}
+function applyPreset() {
+    const p = PRESETS[$('preset').value];
+    if (p) { $('sl-inertia').value = p.i; $('sl-load').value = p.l; }
+    applyProfile();
+}
+function onSlider() {
+    $('preset').value = 'custom';
+    applyProfile();
+}
+
+// ── Persistenz (localStorage) ─────────────────────────────────
+const LS_KEY = 'luftungshelfer';
+function saveState() {
+    try {
+        localStorage.setItem(LS_KEY, JSON.stringify({
+            source, loc, userT: $('t-in').value,
+            iv: $('sl-inertia').value, lv: $('sl-load').value, preset: $('preset').value
+        }));
+    } catch(e) {}
+}
+function loadState() {
+    try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch(e) { return null; }
+}
+
+// ── Standort, Quelle & Init ───────────────────────────────────
+async function loadWx(lat, lon, name) {
+    loc = { lat, lon, name };
+    srcLabel = SRC_LABEL[source];
+    setLoc(`Lade ${srcLabel}-Daten für ${name} …`, false, true);
+    try {
+        wx = await fetchWeather(lat, lon);
+        lastFetch = new Date();
+        const ts = `${String(lastFetch.getHours()).padStart(2,'0')}:${String(lastFetch.getMinutes()).padStart(2,'0')}`;
+        setLoc(`${name} · Quelle: ${srcLabel} · Stand ${ts} Uhr (Auto-Refresh alle 30 min)`);
+        $('btn-calc').disabled = false;
+        calculate();   // direkt rechnen, damit sofort Ergebnisse sichtbar sind
+    } catch(e) {
+        setLoc(e.message, true);
+    }
+}
+
+function changeSource() {
+    source = $('src').value;
+    if (loc) loadWx(loc.lat, loc.lon, loc.name);
+}
+
+async function searchCity() {
+    const city = $('city-in').value.trim();
+    if (!city) return;
+    try {
+        setLoc('Suche …', false, true);
+        const { lat, lon, name } = await geocode(city);
+        await loadWx(lat, lon, name);
+    } catch(e) { setLoc(e.message, true); }
+}
+
+function init() {
+    const st = loadState();
+    if (st) {
+        if (st.source)  { source = st.source; $('src').value = source; }
+        if (st.userT)   $('t-in').value = st.userT;
+        if (st.iv)      $('sl-inertia').value = st.iv;
+        if (st.lv)      $('sl-load').value = st.lv;
+        if (st.preset)  $('preset').value = st.preset;
+        if (st.loc && st.loc.name) $('city-in').value = st.loc.name;
+    }
+    applyProfile();   // setzt Profil + Slider-Werte (noch ohne calculate, wx leer)
+    const start = (st && st.loc && st.loc.lat != null) ? st.loc : DEFAULT_LOC;
+    loadWx(start.lat, start.lon, start.name);
+    // Auto-Refresh: Daten alle 30 min neu laden (Fenster rollt mit der Uhrzeit)
+    setInterval(() => { if (loc) loadWx(loc.lat, loc.lon, loc.name); }, 30 * 60 * 1000);
+}
+
+$('t-in').addEventListener('keydown', e => { if (e.key === 'Enter') calculate(); });
+init();
+</script>
+</body>
+</html>

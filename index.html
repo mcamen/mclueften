@@ -575,7 +575,11 @@ function showRec(it, ot, idp, odp) {
         el.innerHTML = `<span class="ico">✅</span><span>Jetzt lüften! Außen ist <strong>${fmt(-dT)} °C kühler</strong> und nicht feuchter (Taupunkt ${dDP >= 0 ? '+' : ''}${fmt(dDP)} °C) – das senkt Temperatur und Feuchte.</span>`;
     } else if (!cooler) {
         el.className = 'rec rec-close';
-        el.innerHTML = `<span class="ico">🚫</span><span>Fenster geschlossen lassen. Außen ist <strong>${fmt(dT)} °C wärmer</strong> – Lüften würde Hitze hereinholen.</span>`;
+        // !cooler ⇒ dT ≥ -T_TOL: entweder klar wärmer oder nur unwesentlich kühler/gleich warm
+        const reason = dT > T_TOL
+            ? `Außen ist <strong>${fmt(dT)} °C wärmer</strong> – Lüften würde Hitze hereinholen.`
+            : `Außen ist <strong>etwa gleich warm</strong> (Δ ${dT >= 0 ? '+' : ''}${fmt(dT)} °C) – Lüften bringt keine spürbare Abkühlung.`;
+        el.innerHTML = `<span class="ico">🚫</span><span>Fenster geschlossen lassen. ${reason}</span>`;
     } else {
         el.className = 'rec rec-neutral';
         el.innerHTML = `<span class="ico">⚖️</span><span>Grenzfall: Außen ${fmt(-dT)} °C kühler, aber feuchter (Taupunkt +${fmt(dDP)} °C). Kurzes Stoßlüften kühlt, bringt aber etwas Feuchte herein.</span>`;

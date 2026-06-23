@@ -819,7 +819,7 @@ function saveState() {
             iv: $('sl-inertia').value, lv: $('sl-load').value, preset: $('preset').value,
             calOn: $('cal-on').checked
         }));
-    } catch(e) {}
+    } catch(e) { /* localStorage nicht verfügbar (z. B. Privater Modus) – ignorieren */ }
 }
 function loadState() {
     try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch(e) { return null; }

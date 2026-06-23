@@ -1,0 +1,15 @@
+{
+  "name": "luftungshelfer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lüftungshelfer – Taupunkt-/Temperaturvergleich (statische Single-Page-App)",
+  "scripts": {
+    "lint": "eslint index.html"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "eslint-plugin-html": "^8.1.4",
+    "globals": "^17.7.0"
+  }
+}

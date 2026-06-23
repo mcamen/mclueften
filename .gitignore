@@ -1,3 +1,6 @@
 .DS_Store
 Thumbs.db
 .claude/
+
+# Node / Tooling
+node_modules/

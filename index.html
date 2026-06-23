@@ -19,6 +19,9 @@
         .header p  { margin-top:.3rem; opacity:.82; font-size:.88rem; max-width:560px; }
         .layout { max-width:960px; margin:0 auto; padding:1.4rem 1.2rem; display:grid; gap:1rem; }
         .card { background:var(--surface); border-radius:var(--r); box-shadow:var(--sh); padding:1.35rem 1.45rem; }
+        /* Eingabe (breit) + Wohnungs-Profil (schmal) nebeneinander; auf schmalen Screens untereinander */
+        .row-2 { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:1rem; align-items:start; }
+        @media(max-width:760px) { .row-2 { grid-template-columns:1fr; } }
         .card-title { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:.95rem; }
 
         /* input */
@@ -42,19 +45,21 @@
         .city-search.show { display:flex; }
         .city-search input { border:2px solid var(--border); border-radius:8px; padding:.38rem .65rem; font-size:.88rem; outline:none; transition:border-color .15s; min-width:190px; }
         .city-search input:focus { border-color:var(--blue); }
-        .sel { border:2px solid var(--border); border-radius:8px; padding:.38rem .55rem; font-size:.88rem; font-weight:600; background:var(--bg); color:var(--text); outline:none; cursor:pointer; transition:border-color .15s; }
+        .sel { box-sizing:border-box; max-width:100%; border:2px solid var(--border); border-radius:8px; padding:.38rem .55rem; font-size:.88rem; font-weight:600; background:var(--bg); color:var(--text); outline:none; cursor:pointer; transition:border-color .15s; }
         .sel:focus { border-color:var(--blue); }
         .chk { display:flex; align-items:center; gap:.45rem; font-size:.88rem; font-weight:600; cursor:pointer; }
         .chk input { width:16px; height:16px; accent-color:var(--blue); cursor:pointer; }
         .cal-note { margin-top:.4rem; font-size:.78rem; color:var(--muted); min-height:1em; }
 
-        /* profile sliders */
-        .prof-row { display:flex; align-items:center; gap:.8rem; margin-top:.65rem; }
+        /* profile: vertikale, kompakte Anordnung (Kopfzeile + Slider darunter) */
+        .prof-row { margin-top:.7rem; }
         .prof-row:first-of-type { margin-top:0; }
-        .prof-row > label { flex:0 0 148px; font-size:.86rem; font-weight:600; line-height:1.25; }
-        .prof-hint { display:block; font-weight:400; font-size:.71rem; color:var(--muted); margin-top:.1rem; }
-        .prof-row input[type=range] { flex:1; min-width:90px; accent-color:var(--blue); cursor:pointer; }
-        .prof-val { flex:0 0 26px; text-align:right; font-weight:700; font-variant-numeric:tabular-nums; color:var(--blue); }
+        .prof-row .sel { width:100%; }
+        .prof-head { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; font-size:.86rem; font-weight:600; }
+        .prof-head label { cursor:pointer; }
+        .prof-hint { display:block; font-weight:400; font-size:.71rem; color:var(--muted); margin:.1rem 0 .3rem; }
+        .prof-row input[type=range] { display:block; width:100%; accent-color:var(--blue); cursor:pointer; }
+        .prof-val { font-weight:700; font-variant-numeric:tabular-nums; color:var(--blue); }
 
         /* stats */
         .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:.7rem; margin-bottom:.9rem; }
@@ -106,6 +111,9 @@
 
 <div class="layout">
 
+    <!-- Eingabe + Wohnungs-Profil nebeneinander -->
+    <div class="row-2">
+
     <!-- Eingabe -->
     <div class="card">
         <div class="card-title">Eingabe</div>
@@ -149,7 +157,7 @@
     <div class="card">
         <div class="card-title">Wohnungs-Profil</div>
         <div class="prof-row">
-            <label for="preset">Vorlage</label>
+            <div class="prof-head"><label for="preset">Vorlage</label></div>
             <select id="preset" class="sel" onchange="applyPreset()">
                 <option value="meine" selected>Meine Wohnung (42 m², Sonnenseite, Rolladen zu)</option>
                 <option value="gedaemmt">Gut gedämmt &amp; verschattet</option>
@@ -160,16 +168,18 @@
             </select>
         </div>
         <div class="prof-row">
-            <label for="sl-inertia">Wärmeträgheit<span class="prof-hint">träge &amp; kühl ↔ heizt schnell auf</span></label>
+            <div class="prof-head"><label for="sl-inertia">Wärmeträgheit</label><span class="prof-val" id="sl-inertia-v">3</span></div>
+            <span class="prof-hint">träge &amp; kühl ↔ heizt schnell auf</span>
             <input type="range" id="sl-inertia" min="1" max="10" value="3" oninput="onSlider()">
-            <span class="prof-val" id="sl-inertia-v">3</span>
         </div>
         <div class="prof-row">
-            <label for="sl-load">Innere Last<span class="prof-hint">1 Person ruhig ↔ mehrere / Kochen</span></label>
+            <div class="prof-head"><label for="sl-load">Innere Last</label><span class="prof-val" id="sl-load-v">2</span></div>
+            <span class="prof-hint">1 Person ruhig ↔ mehrere / Kochen</span>
             <input type="range" id="sl-load" min="1" max="10" value="2" oninput="onSlider()">
-            <span class="prof-val" id="sl-load-v">2</span>
         </div>
     </div>
+
+    </div><!-- /row-2 -->
 
     <!-- Status -->
     <div class="card" id="card-status" style="display:none">

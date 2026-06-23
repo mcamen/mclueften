@@ -44,6 +44,9 @@
         .city-search input:focus { border-color:var(--blue); }
         .sel { border:2px solid var(--border); border-radius:8px; padding:.38rem .55rem; font-size:.88rem; font-weight:600; background:var(--bg); color:var(--text); outline:none; cursor:pointer; transition:border-color .15s; }
         .sel:focus { border-color:var(--blue); }
+        .chk { display:flex; align-items:center; gap:.45rem; font-size:.88rem; font-weight:600; cursor:pointer; }
+        .chk input { width:16px; height:16px; accent-color:var(--blue); cursor:pointer; }
+        .cal-note { margin-top:.4rem; font-size:.78rem; color:var(--muted); min-height:1em; }
 
         /* profile sliders */
         .prof-row { display:flex; align-items:center; gap:.8rem; margin-top:.65rem; }
@@ -121,6 +124,17 @@
                 <option value="open-meteo">Open-Meteo</option>
             </select>
         </div>
+        <div class="input-row" style="margin-top:.7rem; flex-wrap:wrap">
+            <label class="chk" for="cal-on">
+                <input type="checkbox" id="cal-on" checked onchange="calculate()">
+                Außentemp. an Messung kalibrieren
+            </label>
+            <div class="tin">
+                <input type="number" id="cal-t" step="0.1" min="-30" max="50" oninput="onCalInput()">
+                <span>°C</span>
+            </div>
+        </div>
+        <div class="cal-note" id="cal-note"></div>
         <div class="loc-info" id="loc-info">
             <span class="spin"></span><span>Standort wird ermittelt …</span>
         </div>
@@ -234,6 +248,11 @@
         Lüften sowohl Temperatur als auch Feuchte. Im Hochsommer trifft das typischerweise nachts/früh morgens zu,
         tagsüber bringt offenes Fenster nur Hitze herein. Durch Lüften kühlt die Wohnung dabei höchstens bis auf die
         gleichzeitige Außentemperatur ab.
+        <strong>Außentemperatur-Kalibrierung:</strong> Das Feld wird automatisch mit der echten aktuellen
+        DWD-Stationsmessung vorbelegt und korrigiert die Prognosekurve per konstantem Offset (der Taupunkt
+        bleibt dabei erhalten, da eine Temperaturmessung nichts über die Feuchte aussagt). Du kannst den Wert
+        mit einem eigenen, hyperlokaleren Messwert überschreiben – z. B. der aktuellen Temperatur von
+        kachelmannwetter.com (deren Seite lässt sich aus technischen Gründen nicht automatisch auslesen).
         <strong>Datenquellen:</strong> <a href="https://brightsky.dev" style="color:inherit">DWD via Brightsky</a>
         (Standard, Deutscher Wetterdienst, Abdeckung v. a. Deutschland) oder
         <a href="https://open-meteo.com" style="color:inherit">Open-Meteo</a>. Standort-Standard: Tübingen.
@@ -354,6 +373,8 @@ let srcLabel = 'DWD';
 let nowPos = 0;            // Position der „Jetzt"-Linie im 24-h-Fenster (0…23)
 let lastFetch = null;      // Zeitpunkt des letzten Datenabrufs
 let sunMarks = [];         // [{ pos, type:'rise'|'set', label }] im 24-h-Fenster
+let obs = null;            // aktuelle DWD-Stationsmessung { temp, station, dist, time }
+let calManual = false;     // Kalibrierwert vom Nutzer manuell überschrieben?
 
 // Standard-Standort: Tübingen
 const DEFAULT_LOC = { lat: 48.52, lon: 9.06, name: 'Tübingen' };
@@ -493,6 +514,17 @@ async function fetchBrightsky(lat, lon) {
     return { hourly: { time, temperature_2m, relative_humidity_2m } };
 }
 
+// Echte aktuelle DWD-Stationsmessung (Brightsky), quellenunabhängig.
+async function fetchObservation(lat, lon) {
+    const u = `https://api.brightsky.dev/current_weather?lat=${lat}&lon=${lon}&tz=Europe%2FBerlin`;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error('keine Messung');
+    const j = await r.json();
+    const w = j.weather || {}, s = (j.sources || [])[0] || {};
+    if (w.temperature == null) throw new Error('keine Messung');
+    return { temp: w.temperature, station: s.station_name || 'DWD-Station', dist: s.distance, time: w.timestamp };
+}
+
 async function geocode(city) {
     const u = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de&format=json`;
     const d = await (await fetch(u)).json();
@@ -508,6 +540,20 @@ function setLoc(msg, err = false, spin = false) {
     const el = $('loc-info');
     el.className = 'loc-info' + (err ? ' err' : '');
     el.innerHTML = (spin ? '<span class="spin"></span>' : '') + `<span>${msg}</span>`;
+}
+
+// Hinweistext zur Außentemperatur-Kalibrierung (DWD-Messung + angewandter Offset)
+function showCalNote(offset) {
+    const parts = [];
+    if (obs) parts.push(`DWD-Messung ${obs.station} (${(obs.dist/1000).toFixed(1)} km): ${fmt(obs.temp)} °C`);
+    if (offset != null) parts.push(`Korrektur ${offset >= 0 ? '+' : ''}${fmt(offset)} °C ggü. ${srcLabel}-Prognose${calManual ? ' (manuell)' : ''}`);
+    $('cal-note').textContent = parts.join(' · ');
+}
+
+// Nutzer hat den Kalibrierwert manuell geändert (z. B. kachelmann-Wert)
+function onCalInput() {
+    calManual = true;
+    if (wx) calculate();
 }
 
 function showRec(it, ot, idp, odp) {
@@ -662,13 +708,31 @@ function calculate() {
         return;
     }
 
-    const h   = wx.hourly;
-    const tF  = h.temperature_2m, rhF = h.relative_humidity_2m, timeF = h.time;
-    const len = tF.length;
+    const h     = wx.hourly;
+    const timeF = h.time;
+    const tF    = h.temperature_2m.slice();     // Arbeitskopien (Original nicht verändern)
+    const rhF   = h.relative_humidity_2m.slice();
+    const len   = tF.length;
 
     // Rollendes Fenster: 24 h ab der aktuellen Stunde (über Mitternacht hinaus).
     const nowDate = new Date();
     const startIdx = Math.max(0, Math.min(nowDate.getHours(), len - 24));
+
+    // Kalibrierung der Außentemperatur auf einen gemessenen Wert: konstanter
+    // Offset über alle Stunden, Taupunkt/absolute Feuchte bleiben erhalten
+    // (eine reine Temperaturmessung sagt nichts über die Feuchte aus).
+    const calOn = $('cal-on').checked;
+    const calV  = parseFloat($('cal-t').value);
+    let   calOffset = null;
+    if (calOn && !isNaN(calV) && startIdx < len) {
+        calOffset = calV - tF[startIdx];
+        for (let i = 0; i < len; i++) {
+            const ah = absHum(tF[i], rhF[i]);
+            tF[i] += calOffset;
+            rhF[i] = relHum(tF[i], ah);
+        }
+    }
+    showCalNote(calOffset);
 
     // Simulation über den vollen Bereich (eingeschwungen), Anker = aktuelle Stunde
     const sim = simulate(tF, rhF, userT, startIdx);
@@ -752,7 +816,8 @@ function saveState() {
     try {
         localStorage.setItem(LS_KEY, JSON.stringify({
             source, loc, userT: $('t-in').value,
-            iv: $('sl-inertia').value, lv: $('sl-load').value, preset: $('preset').value
+            iv: $('sl-inertia').value, lv: $('sl-load').value, preset: $('preset').value,
+            calOn: $('cal-on').checked
         }));
     } catch(e) {}
 }
@@ -766,7 +831,14 @@ async function loadWx(lat, lon, name) {
     srcLabel = SRC_LABEL[source];
     setLoc(`Lade ${srcLabel}-Daten für ${name} …`, false, true);
     try {
-        wx = await fetchWeather(lat, lon);
+        // Prognose + echte DWD-Messung parallel; Messung ist optional
+        const [w, o] = await Promise.all([
+            fetchWeather(lat, lon),
+            fetchObservation(lat, lon).catch(() => null)
+        ]);
+        wx = w; obs = o;
+        calManual = false;                          // frische Messung hat Vorrang
+        if (obs) $('cal-t').value = fmt(obs.temp);  // Kalibrierfeld vorbelegen
         lastFetch = new Date();
         const ts = `${String(lastFetch.getHours()).padStart(2,'0')}:${String(lastFetch.getMinutes()).padStart(2,'0')}`;
         setLoc(`${name} · Quelle: ${srcLabel} · Stand ${ts} Uhr (Auto-Refresh alle 30 min)`);
@@ -800,6 +872,7 @@ function init() {
         if (st.iv)      $('sl-inertia').value = st.iv;
         if (st.lv)      $('sl-load').value = st.lv;
         if (st.preset)  $('preset').value = st.preset;
+        if (st.calOn != null) $('cal-on').checked = st.calOn;
         if (st.loc && st.loc.name) $('city-in').value = st.loc.name;
     }
     applyProfile();   // setzt Profil + Slider-Werte (noch ohne calculate, wx leer)

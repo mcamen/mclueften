@@ -240,6 +240,20 @@
         </div>
     </div>
 
+    <!-- Luftfeuchte-Diagramm -->
+    <div class="card" id="card-rh" style="display:none">
+        <div class="card-title">Luftfeuchte-Verlauf (nächste 24 h)</div>
+        <div class="chart-wrap"><canvas id="rh-chart"></canvas></div>
+        <div class="legend">
+            <span class="legend-item"><span class="dot" style="background:#ea580c"></span>Innen ohne Lüften</span>
+            <span class="legend-item"><span class="dot" style="background:#2563eb"></span>Außen (Live-Quelle)</span>
+            <span class="legend-item"><span class="dot" style="background:rgba(21,128,61,.18)"></span>Lüften lohnt sich</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #f59e0b"></span>☀ Aufgang</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #6366f1"></span>☾ Untergang</span>
+        </div>
+    </div>
+
     <!-- Lüftungsplan -->
     <div class="card" id="card-sched" style="display:none">
         <div class="card-title">Lüftungsplan (nächste 24 h)</div>
@@ -376,7 +390,7 @@ function simulate(outT, outRH, userT, anchorIdx) {
 }
 
 // ── State ─────────────────────────────────────────────────────
-let wx = null, dpChart = null, tChart = null;
+let wx = null, dpChart = null, tChart = null, rhChart = null;
 let loc = null;            // aktueller Standort { lat, lon, name }
 let source = 'dwd';        // gewählte Datenquelle
 let srcLabel = 'DWD';
@@ -713,6 +727,57 @@ function buildTempChart(labels, inT, outT, vent) {
     });
 }
 
+function buildRhChart(labels, inRH, outRH, vent) {
+    const ctx = $('rh-chart').getContext('2d');
+    if (rhChart) rhChart.destroy();
+
+    rhChart = new Chart(ctx, {
+        type: 'line',
+        plugins: [zonePlugin(vent), nowLinePlugin, sunPlugin],
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: 'Rel. Feuchte Innen (ohne Lüften)',
+                    data: inRH.map(v => Math.round(v)),
+                    borderColor: '#ea580c', pointBackgroundColor: '#ea580c',
+                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
+                },
+                {
+                    label: `Rel. Feuchte Außen (${srcLabel})`,
+                    data: outRH.map(v => Math.round(v)),
+                    borderColor: '#2563eb', pointBackgroundColor: '#2563eb',
+                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top' },
+                tooltip: {
+                    callbacks: {
+                        label: c => `${c.dataset.label}: ${c.parsed.y} %`,
+                        afterBody: items => {
+                            const i = items[0].dataIndex;
+                            const d = outRH[i] - inRH[i];
+                            return [
+                                `Δ rel. Feuchte (Außen−Innen): ${d >= 0 ? '+' : ''}${Math.round(d)} %`,
+                                vent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
+                            ];
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
+                y: { title: { display: true, text: 'Rel. Luftfeuchte (%)' }, suggestedMin: 0, suggestedMax: 100, grid: { color: 'rgba(0,0,0,.05)' } }
+            }
+        }
+    });
+}
+
 // ── Haupt-Berechnung ─────────────────────────────────────────
 function calculate() {
     if (!wx) return;
@@ -782,11 +847,13 @@ function calculate() {
     showRec(inT[0], outT[0], inDP[0], outDP[0]);
     buildChart(labels, inDP, outDP, vent);
     buildTempChart(labels, inT, outT, vent);
+    buildRhChart(labels, inRH, outRH, vent);
     buildSched(labels, inT, outT, inDP, outDP, vent);
 
     $('card-status').style.display = '';
     $('card-chart').style.display  = '';
     $('card-temp').style.display   = '';
+    $('card-rh').style.display     = '';
     $('card-sched').style.display  = '';
 
     saveState();

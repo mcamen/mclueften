@@ -5,7 +5,8 @@
   "description": "Lüftungshelfer – Taupunkt-/Temperaturvergleich (statische Single-Page-App)",
   "license": "MIT",
   "scripts": {
-    "lint": "eslint index.html"
+    "lint": "eslint index.html",
+    "test": "node --test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

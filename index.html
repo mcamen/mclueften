@@ -273,10 +273,10 @@
 
     <!-- CO₂-Diagramm -->
     <div class="card" id="card-co2" style="display:none">
-        <div class="card-title">CO₂-Verlauf (Schätzung, ohne Lüften)</div>
+        <div class="card-title">CO₂-Verlauf (Schätzung, bei Nachtlüftung)</div>
         <div class="chart-wrap"><canvas id="co2-chart"></canvas></div>
         <div class="legend">
-            <span class="legend-item"><span class="dot" style="background:#0d9488"></span>CO₂ Innen (ohne Lüften)</span>
+            <span class="legend-item"><span class="dot" style="background:#0d9488"></span>CO₂ Innen (bei Nachtlüftung)</span>
             <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #c2410c"></span>mäßig ab 1000</span>
             <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #b91c1c"></span>stickig ab 1400</span>
             <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
@@ -382,8 +382,10 @@ const profile = {
 };
 
 // CO₂: Außenbasis ~420 ppm; eine ruhende Person erzeugt ~18 L/h CO₂,
-// in ~100 m³ ≈ 180 ppm/h. Gleichgewicht ohne Lüften ≈ 420 + Erzeugung/INFILTR.
+// in ~100 m³ ≈ 180 ppm/h. Bei Nachtlüftung (Fenster offen 22–08 Uhr) hoher
+// Luftwechsel → CO₂ fällt fast auf außen; tagsüber (zu) baut es sich auf.
 const CO2_OUT = 420, CO2_PER_PERSON = 180;
+const CO2_OPEN_H = 22, CO2_CLOSE_H = 8, CO2_ACH_OPEN = 3.0;
 
 // outT/outRH sind die VOLLEN Arrays; anchorIdx = Index der aktuellen Stunde
 // (Kalibrierungsanker). Die Simulation läuft über den ganzen Bereich, damit
@@ -420,14 +422,22 @@ function simulate(outT, outRH, userT, anchorIdx) {
     const inRH = inT.map((t, i) => relHum(t, inAH[i]));
     const inDP = inT.map((t, i) => dewPoint(t, inRH[i]));
 
-    // ── CO₂ ohne Lüften ──
-    // Gleiche Bilanz wie die Feuchte: Personen erzeugen CO₂, die Grundinfiltration
-    // gleicht langsam Richtung Außenluft (~420 ppm) aus.
-    const co2Gen = profile.persons * CO2_PER_PERSON;
+    // ── CO₂ bei Nachtlüftung ──
+    // Personen erzeugen CO₂; der Luftwechsel führt es Richtung Außenluft ab.
+    // Nachts (Fenster offen) ist der Luftwechsel hoch → CO₂ fällt fast auf außen,
+    // tagsüber (zu) nur Grundinfiltration → CO₂ baut sich auf.
+    // Pro Stunde wird die EXAKTE Lösung verwendet (stabil auch bei hohem Luftwechsel):
+    //   C(t+1) = C_eq + (C(t) − C_eq)·e^(−ach),  C_eq = außen + Erzeugung/ach
+    const co2Gen   = profile.persons * CO2_PER_PERSON;
+    const co2IsOpen = i => { const hr = i % 24; return hr >= CO2_OPEN_H || hr < CO2_CLOSE_H; };
+    const co2Step  = (prev, ach) => {
+        const eq = CO2_OUT + co2Gen / ach;
+        return eq + (prev - eq) * Math.exp(-ach);
+    };
     const inCO2 = new Array(n);
-    inCO2[0] = CO2_OUT + co2Gen / INFILTR;
+    inCO2[0] = CO2_OUT + co2Gen / (co2IsOpen(0) ? CO2_ACH_OPEN : INFILTR);
     for (let h = 1; h < n; h++)
-        inCO2[h] = inCO2[h-1] + co2Gen - INFILTR * (inCO2[h-1] - CO2_OUT);
+        inCO2[h] = co2Step(inCO2[h-1], co2IsOpen(h) ? CO2_ACH_OPEN : INFILTR);
 
     return { inT, inRH, inDP, outDP, outAH, inAH, inCO2 };
 }
@@ -880,7 +890,7 @@ function buildCo2Chart(labels, inCO2) {
         data: {
             labels,
             datasets: [{
-                label: 'CO₂ Innen (Schätzung, ohne Lüften)',
+                label: 'CO₂ Innen (Schätzung, bei Nachtlüftung)',
                 data: inCO2.map(v => Math.round(v)),
                 borderColor: '#0d9488', pointBackgroundColor: '#0d9488',
                 borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4

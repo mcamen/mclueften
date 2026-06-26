@@ -75,11 +75,15 @@ test('co2Class: Schwellen gut / mäßig / stickig', () => {
     assert.equal(co2Class(1500).label, 'stickig');
 });
 
-test('CO₂-Modell: Gleichgewicht ≈ 420 + Personen·180 / INFILTR', () => {
-    // Standardprofil (1 Person, INFILTR 0,3) ⇒ 420 + 180/0,3 = 1020 ppm
+test('CO₂-Modell: baut sich tagsüber (zu) auf, fällt nachts (offen)', () => {
+    // 1 Person, INFILTR 0,3 ⇒ geschlossenes Gleichgewicht ~1020 ppm,
+    // nachts (Fenster offen, ACH 3) ~480 ppm. Index = Stunde (Array ab 00:00).
     const outT = Array(24).fill(25), outRH = Array(24).fill(50);
     const sim = simulate(outT, outRH, 25, 0);
-    assert.ok(Math.abs(sim.inCO2[0] - 1020) < 1, `Start ${sim.inCO2[0]}`);
-    assert.ok(Math.abs(sim.inCO2[12] - 1020) < 1, 'bleibt im Gleichgewicht');
-    assert.ok(sim.inCO2.every(v => v >= 420), 'nie unter Außenbasis');
+    const dayPeak  = Math.max(...sim.inCO2.slice(8, 22));   // 08–21 Uhr (zu)
+    const nightLow = Math.min(...sim.inCO2.slice(0, 8));    // 00–07 Uhr (offen)
+    assert.ok(dayPeak > nightLow + 300, `Tag ${dayPeak.toFixed(0)} vs Nacht ${nightLow.toFixed(0)}`);
+    assert.ok(dayPeak <= 1021, 'unter geschlossenem Gleichgewicht (~1020)');
+    assert.ok(nightLow < 600, 'nachts nahe Außenwert');
+    assert.ok(sim.inCO2.every(v => v >= 420 - 1), 'nie unter Außenbasis');
 });

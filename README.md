@@ -1,5 +1,9 @@
 # Lüftungshelfer
 
+[![CI](https://github.com/mcamen/mclueften/actions/workflows/ci.yml/badge.svg)](https://github.com/mcamen/mclueften/actions/workflows/ci.yml)
+
+**Live-Demo: https://mcamen.github.io/mclueften/**
+
 Eine kleine Single-Page-Web-App, die abschätzt, **wann sich Lüften lohnt** – um im Sommer Hitze und Feuchte aus der Wohnung zu bekommen. Sie vergleicht das modellierte Innenklima („ohne Lüften") mit der Außenluft und empfiehlt für die nächsten 24 Stunden, wann Fenster auf bzw. zu sollten. Läuft komplett im Browser, ohne Backend.
 
 ## Screenshot

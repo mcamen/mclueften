@@ -23,7 +23,7 @@ code = code.slice(0, cut);   // App-Start entfernen → nur Funktionsdefinitione
 const ctx = { Math, Date, String, Number, JSON, Object, Array, console, isNaN, parseFloat };
 vm.createContext(ctx);
 vm.runInContext(code, ctx);
-const { dewPoint, absHum, relHum, rhFromDew, sunTimes, hm, ventBenefit } = ctx;
+const { dewPoint, absHum, relHum, rhFromDew, sunTimes, hm, ventBenefit, simulate, co2Class } = ctx;
 
 test('dewPoint: bei 100 % rel. Feuchte ≈ Temperatur', () => {
     for (const T of [5, 20, 30]) assert.ok(Math.abs(dewPoint(T, 100) - T) < 0.15, `T=${T}`);
@@ -67,4 +67,19 @@ test('ventBenefit: nur lüften, wenn außen kühler UND nicht feuchter', () => {
     assert.equal(ventBenefit(26, 30, 16, 14), false);   // wärmer
     assert.equal(ventBenefit(26, 20, 14, 18), false);   // kühler, aber feuchter
     assert.equal(ventBenefit(26, 25.7, 16, 14), false); // innerhalb Toleranz (kein klarer Vorteil)
+});
+
+test('co2Class: Schwellen gut / mäßig / stickig', () => {
+    assert.equal(co2Class(800).label, 'gut');
+    assert.equal(co2Class(1100).label, 'mäßig');
+    assert.equal(co2Class(1500).label, 'stickig');
+});
+
+test('CO₂-Modell: Gleichgewicht ≈ 420 + Personen·180 / INFILTR', () => {
+    // Standardprofil (1 Person, INFILTR 0,3) ⇒ 420 + 180/0,3 = 1020 ppm
+    const outT = Array(24).fill(25), outRH = Array(24).fill(50);
+    const sim = simulate(outT, outRH, 25, 0);
+    assert.ok(Math.abs(sim.inCO2[0] - 1020) < 1, `Start ${sim.inCO2[0]}`);
+    assert.ok(Math.abs(sim.inCO2[12] - 1020) < 1, 'bleibt im Gleichgewicht');
+    assert.ok(sim.inCO2.every(v => v >= 420), 'nie unter Außenbasis');
 });

@@ -15,9 +15,10 @@ Eine kleine Single-Page-Web-App, die abschätzt, **wann sich Lüften lohnt** –
 - **Lüften-Empfehlung** je Stunde: grün, wenn die Außenluft **kühler UND nicht feuchter** ist (senkt dann Temperatur *und* Feuchte), sonst „Fenster zu". Basiert auf Taupunkt (Feuchte) *und* Temperatur.
 - **Rollendes 24-h-Fenster** ab der aktuellen Stunde (läuft über Mitternacht weiter) – für Taupunkt- und Temperaturverlauf sowie einen Lüftungsplan.
 - **Sonnenauf- und -untergang** als Markierung in den Diagrammen (lokal berechnet).
+- **CO₂-Schätzung** (Luftqualität): eigenes Diagramm mit Schwellenlinien, Status-Ampel und – bei stickiger Luft – ein „kurz stoßlüften"-Hinweis (unabhängig von der Hitze-Empfehlung). Skaliert mit der Personenzahl.
 - **Live-Wetterdaten** aus zwei Quellen: **DWD** (über [Brightsky](https://brightsky.dev), Standard, v. a. Deutschland) oder [Open-Meteo](https://open-meteo.com). Standort-Standard: Tübingen, beliebiger Ort per Suche.
 - **Kalibrierung** der Außentemperatur auf eine echte Messung: automatisch mit der aktuellen DWD-Stationsmessung vorbelegt, manuell überschreibbar (Offset-Korrektur, Taupunkt bleibt erhalten).
-- **Einstellbares Wohnungs-Profil** (Vorlagen + Slider für Wärmeträgheit und innere Last).
+- **Einstellbares Wohnungs-Profil** (Vorlagen + Slider für Wärmeträgheit und innere Last, Personenzahl).
 - Ort, Quelle und Profil bleiben gespeichert (localStorage); Daten werden alle 30 min aktualisiert.
 
 ## Nutzung

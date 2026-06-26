@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Lüftungshelfer – Taupunkt-/Temperaturvergleich (statische Single-Page-App)",
+  "license": "MIT",
   "scripts": {
     "lint": "eslint index.html"
   },

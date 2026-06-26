@@ -38,3 +38,7 @@ Das Inline-JavaScript lässt sich mit ESLint prüfen:
 npm install
 npm run lint
 ```
+
+## Lizenz
+
+[MIT](LICENSE) – frei nutz-, veränder- und weiterverteilbar; einfach den Copyright-Hinweis erhalten.

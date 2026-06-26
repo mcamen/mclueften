@@ -144,6 +144,16 @@
             </div>
         </div>
         <div class="cal-note" id="cal-note"></div>
+        <div class="input-row" style="margin-top:.7rem; flex-wrap:wrap">
+            <label class="chk" for="co2cal-on">
+                <input type="checkbox" id="co2cal-on" onchange="calculate()">
+                CO₂ an Sensor-Messung kalibrieren
+            </label>
+            <div class="tin">
+                <input type="number" id="co2cal-v" step="10" min="350" max="5000" oninput="calculate()">
+                <span>ppm</span>
+            </div>
+        </div>
         <div class="loc-info" id="loc-info">
             <span class="spin"></span><span>Standort wird ermittelt …</span>
         </div>
@@ -941,6 +951,16 @@ function calculate() {
     const outT = cut(tF), outRH = cut(rhF), outDP = cut(sim.outDP);
     const vent = cut(ventF), inCO2 = cut(sim.inCO2);
 
+    // Optional: CO₂-Kurve auf einen gemessenen Sensorwert kalibrieren – konstanter
+    // Offset, sodass „jetzt" (Index 0) dem Messwert entspricht (analog zur Temperatur).
+    const co2CalOn = $('co2cal-on').checked;
+    const co2CalV  = parseFloat($('co2cal-v').value);
+    const co2Calibrated = co2CalOn && !isNaN(co2CalV);
+    if (co2Calibrated) {
+        const off = co2CalV - inCO2[0];
+        for (let i = 0; i < inCO2.length; i++) inCO2[i] += off;
+    }
+
     // Position der „Jetzt"-Linie im Fenster (Index 0 = aktuelle Stunde)
     nowPos = (nowDate.getHours() - startIdx) + nowDate.getMinutes() / 60;
 
@@ -963,7 +983,7 @@ function calculate() {
     const co2now = co2Class(inCO2[0]);
     $('v-co2').textContent = Math.round(inCO2[0]);
     $('v-co2').style.color = co2now.color;
-    $('v-co2-l').textContent = `CO₂ geschätzt – ${co2now.label}`;
+    $('v-co2-l').textContent = `CO₂ ${co2Calibrated ? 'gemessen' : 'geschätzt'} – ${co2now.label}`;
 
     showRec(inT[0], outT[0], inDP[0], outDP[0]);
     showAirNote(inCO2[0]);

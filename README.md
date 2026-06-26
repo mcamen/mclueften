@@ -29,6 +29,41 @@ Einfach `index.html` im Browser öffnen – Live-Wetterdaten werden automatisch 
 
 Die Innen-Kurven sind eine **freilaufende Prognose „ohne Lüften"**: Sie zeigen, wie warm und feucht es würde, wenn die Fenster geschlossen blieben (Person/Geräte als Wärme- und Feuchtequelle, gedämpfte Kopplung an außen). Lüften lohnt sich dort, wo die Außenluft dieses Innenklima verbessert. Durch Lüften kühlt die Wohnung höchstens bis auf die gleichzeitige Außentemperatur ab. Alle Werte sind Schätzungen – die eingegebene Innentemperatur und die optionale Außentemperatur-Messung dienen als Kalibrierungsanker.
 
+## CO₂-Berechnung
+
+Das CO₂ wird über eine einfache **Massenbilanz** des Raums geschätzt: Personen erzeugen CO₂, der Luftwechsel führt es Richtung Außenluft ab.
+
+**Annahmen / Parameter:**
+
+| Größe | Wert | Bedeutung |
+|---|---|---|
+| Außenbasis `C_out` | **~420 ppm** | CO₂-Gehalt der Frischluft |
+| Erzeugung je Person | **~18 L/h** ≈ **180 ppm/h** | ruhender Erwachsener, bezogen auf ~100 m³ Raum |
+| Luftwechsel zu (`ACH_zu`) | **0,3 / h** | Grundinfiltration bei geschlossenem Fenster |
+| Luftwechsel offen (`ACH_offen`) | **3 / h** | Nachtlüftung, Fenster offen **22–08 Uhr** |
+
+**Gleichgewicht** (Erzeugung = Abfuhr) für `p` Personen:
+
+```
+C_eq = C_out + p · 180 / ACH
+```
+
+Beispiele (1 Person): geschlossen → 420 + 180/0,3 = **1020 ppm**, bei offenem Fenster → 420 + 180/3 = **480 ppm**.
+
+**Zeitverlauf:** Pro Stunde wird die *exakte* Lösung der Bilanz-Differentialgleichung verwendet (nicht das explizite Euler-Verfahren, das bei hohem Luftwechsel oszillieren/negativ werden würde):
+
+```
+C(t+1) = C_eq + (C(t) − C_eq) · e^(−ACH)
+```
+
+Dadurch ergibt sich der typische **Sägezahn**: Tagsüber (Fenster zu, kleiner Luftwechsel) baut sich CO₂ langsam Richtung ~1020 ppm auf, nachts (Fenster offen, großer Luftwechsel) fällt es rasch auf ~480 ppm. Deshalb heißt das Diagramm **„bei Nachtlüftung"** – es trifft bewusst eine andere Annahme als die Temperatur-/Feuchtekurven („ohne Lüften").
+
+**Einstufung (Status-Ampel & Schwellenlinien):** `< 1000 ppm` gut · `1000–1400 ppm` mäßig · `≥ 1400 ppm` stickig. Ab „stickig" erscheint zusätzlich der Hinweis, kurz stoßzulüften – unabhängig von der Hitze-Empfehlung, weil Stoßlüften das CO₂ in Minuten senkt, aber kaum Wärme hereinbringt.
+
+**Kalibrierung & Skalierung:** Die Schätzung skaliert linear mit der **Personenzahl**. Wer einen CO₂-Sensor hat, kann einen gemessenen Wert eingeben; dann wird die ganze Kurve per konstantem Offset so verschoben, dass „jetzt" dem Messwert entspricht (Anzeige wechselt zu „CO₂ gemessen").
+
+> **Vorbehalt:** CO₂ ist – ohne Sensor – die unsicherste Größe der App. Sie hängt stark von der tatsächlichen Belegung (Personen, anwesend/abwesend, Türen) und den realen Lüftungszeiten ab; die Lüftungsfenster (22–08 Uhr) und ~100 m³ Raumvolumen sind fest angenommen. Die Werte sind als grobe Stickigkeits-Einschätzung zu verstehen.
+
 ## Technik
 
 - Einzelne `index.html` (HTML/CSS/JS), kein Backend

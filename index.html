@@ -456,7 +456,9 @@ function co2Class(ppm) {
 }
 
 // ── State ─────────────────────────────────────────────────────
-let wx = null, dpChart = null, tChart = null, rhChart = null, co2Chart = null;
+let wx = null;
+const charts = {};         // Chart.js-Instanzen je Canvas-Id (werden aktualisiert, nicht neu gebaut)
+let curVent = [];          // Lüften ja/nein je Fensterstunde – von Zonen-Plugin und Tooltips gelesen
 let loc = null;            // aktueller Standort { lat, lon, name }
 let source = 'dwd';        // gewählte Datenquelle
 let srcLabel = 'DWD';
@@ -469,6 +471,16 @@ let calManual = false;     // Kalibrierwert vom Nutzer manuell überschrieben?
 // Standard-Standort: Tübingen
 const DEFAULT_LOC = { lat: 48.52, lon: 9.06, name: 'Tübingen' };
 
+// ── Diagramm-Farben ─────────────────────────────────────────
+// Canvas kennt keine CSS-Variablen – die Diagramme brauchen ihre Farben als Werte.
+function THEME() {
+    return { text:'#1e293b', grid:'rgba(0,0,0,.05)', chip:'rgba(255,255,255,.78)',
+        inside:'#ea580c', outside:'#2563eb', co2:'#0d9488',
+        ventOk:'rgba(21,128,61,.12)', ventNo:'rgba(185,28,28,.07)',
+        now:'rgba(30,30,30,.45)', thrMid:'#c2410c', thrHigh:'#b91c1c',
+        sunRise:'#f59e0b', sunSet:'#6366f1' };
+}
+
 // ── Lüftungs-Entscheidung ─────────────────────────────────────
 // Lüften lohnt sich, wenn die Außenluft das Raumklima verbessert:
 // kühler (Abkühlung) UND nicht feuchter (kein Feuchteeintrag).
@@ -479,39 +491,49 @@ function ventBenefit(it, ot, idp, odp) {
     return cooler && notHumider;
 }
 
-// Grüne/rote Hintergrundzonen aus einem Lüften-ja/nein-Array
-function zonePlugin(vent) {
-    return {
-        id: 'zones',
-        beforeDraw(chart) {
-            const { ctx: c, chartArea: ca } = chart;
-            if (!ca) return;
-            const n = vent.length, step = (ca.right - ca.left) / (n - 1);
-            c.save();
-            for (let i = 0; i < n; i++) {
-                const cx = ca.left + i * step;
-                const x1 = Math.max(ca.left, cx - step / 2);
-                const x2 = Math.min(ca.right, cx + step / 2);
-                c.fillStyle = vent[i] ? 'rgba(21,128,61,.12)' : 'rgba(185,28,28,.07)';
-                c.fillRect(x1, ca.top, x2 - x1, ca.height);
-            }
-            c.restore();
-        }
-    };
+// ── Diagramm-Plugins ──────────────────────────────────────
+// Pixelabstand zweier Stützstellen; null, wenn es nichts zu zeichnen gibt.
+// Die Punktzahl kommt aus dem Chart selbst – bei lückenhaften Prognosedaten
+// ist das Fenster kürzer als 24 h.
+function stepOf(chart) {
+    const n = chart.data.labels.length;
+    if (!chart.chartArea || n < 2) return null;
+    return (chart.chartArea.right - chart.chartArea.left) / (n - 1);
 }
 
-// gestrichelte "Jetzt"-Linie als wiederverwendbares Plugin
-// nowPos ist die fraktionale Stunde im Fenster (0 = aktuelle Stunde links).
+// Grüne/rote Hintergrundzonen aus curVent (Lüften ja/nein je Fensterstunde)
+const zonePlugin = {
+    id: 'zones',
+    beforeDraw(chart) {
+        const step = stepOf(chart);
+        const n = chart.data.labels.length;
+        if (!step || curVent.length < n) return;
+        const { ctx: c, chartArea: ca } = chart, th = THEME();
+        c.save();
+        for (let i = 0; i < n; i++) {
+            const cx = ca.left + i * step;
+            const x1 = Math.max(ca.left, cx - step / 2);
+            const x2 = Math.min(ca.right, cx + step / 2);
+            c.fillStyle = curVent[i] ? th.ventOk : th.ventNo;
+            c.fillRect(x1, ca.top, x2 - x1, ca.height);
+        }
+        c.restore();
+    }
+};
+
+// gestrichelte "Jetzt"-Linie – nowPos ist die fraktionale Stunde im Fenster
+// (0 = linker Rand = Beginn der aktuellen Stunde).
 const nowLinePlugin = {
     id: 'nowline',
     afterDraw(chart) {
+        const step = stepOf(chart);
+        if (!step) return;
         const { ctx: c, chartArea: ca } = chart;
-        if (!ca) return;
-        const step = (ca.right - ca.left) / 23;   // 24 Punkte ⇒ 23 Intervalle
-        const nx = ca.left + Math.max(0, Math.min(23, nowPos)) * step;
+        const last = chart.data.labels.length - 1;
+        const nx = ca.left + Math.max(0, Math.min(last, nowPos)) * step;
         c.save();
         c.beginPath();
-        c.strokeStyle = 'rgba(30,30,30,.45)';
+        c.strokeStyle = THEME().now;
         c.lineWidth = 1.5;
         c.setLineDash([4, 4]);
         c.moveTo(nx, ca.top);
@@ -525,15 +547,17 @@ const nowLinePlugin = {
 const sunPlugin = {
     id: 'sun',
     afterDraw(chart) {
-        const { ctx: c, chartArea: ca } = chart;
-        if (!ca || !sunMarks.length) return;
-        const step = (ca.right - ca.left) / 23;
+        const step = stepOf(chart);
+        if (!step || !sunMarks.length) return;
+        const { ctx: c, chartArea: ca } = chart, th = THEME();
+        const last = chart.data.labels.length - 1;
         c.save();
         c.font = '600 10px -apple-system,Segoe UI,sans-serif';
         c.textBaseline = 'top';
         for (const m of sunMarks) {
-            const x = ca.left + Math.max(0, Math.min(23, m.pos)) * step;
-            const color = m.type === 'rise' ? '#f59e0b' : '#6366f1';
+            if (m.pos > last) continue;
+            const x = ca.left + Math.max(0, Math.min(last, m.pos)) * step;
+            const color = m.type === 'rise' ? th.sunRise : th.sunSet;
             c.beginPath();
             c.strokeStyle = color;
             c.globalAlpha = 0.6;
@@ -547,7 +571,7 @@ const sunPlugin = {
             const txt = (m.type === 'rise' ? '☀ ' : '☾ ') + m.label;
             const w = c.measureText(txt).width;
             const tx = Math.max(ca.left + 1, Math.min(ca.right - w - 1, x - w / 2));
-            c.fillStyle = 'rgba(255,255,255,.78)';
+            c.fillStyle = th.chip;
             c.fillRect(tx - 2, ca.top + 1, w + 4, 13);
             c.fillStyle = color;
             c.fillText(txt, tx, ca.top + 2);
@@ -625,6 +649,8 @@ async function geocode(city) {
 // ── UI-Helfer ─────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 const fmt = v => (+v).toFixed(1);
+const r1 = a => a.map(v => +v.toFixed(1));   // Datenreihe auf 1 Nachkommastelle
+const r0 = a => a.map(v => Math.round(v));
 
 function setLoc(msg, err = false, spin = false) {
     const el = $('loc-info');
@@ -682,7 +708,7 @@ function buildSched(labels, inT, outT, inDP, outDP, vent) {
     const list = $('sched-list');
     list.innerHTML = '';
     const slots = [];
-    for (let h = 0; h < 24; h++) {
+    for (let h = 0; h < vent.length; h++) {
         const open = vent[h];
         const last = slots[slots.length - 1];
         if (last && last.open === open) { last.end = h + 1; }
@@ -703,169 +729,18 @@ function buildSched(labels, inT, outT, inDP, outDP, vent) {
     }
 }
 
-function buildChart(labels, inDP, outDP, vent) {
-    const ctx = $('dp-chart').getContext('2d');
-    if (dpChart) dpChart.destroy();
-
-    dpChart = new Chart(ctx, {
-        type: 'line',
-        plugins: [zonePlugin(vent), nowLinePlugin, sunPlugin],
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Taupunkt Innen (ohne Lüften)',
-                    data: inDP.map(v => +v.toFixed(1)),
-                    borderColor: '#ea580c', pointBackgroundColor: '#ea580c',
-                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-                },
-                {
-                    label: `Taupunkt Außen (${srcLabel})`,
-                    data: outDP.map(v => +v.toFixed(1)),
-                    borderColor: '#2563eb', pointBackgroundColor: '#2563eb',
-                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-                }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { position: 'top' },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.parsed.y} °C`,
-                        afterBody: items => {
-                            const i = items[0].dataIndex;
-                            const d = outDP[i] - inDP[i];
-                            return [
-                                `Δ Taupunkt (Außen−Innen): ${d >= 0 ? '+' : ''}${d.toFixed(1)} °C`,
-                                vent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
-                            ];
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
-                y: { title: { display: true, text: 'Taupunkt (°C)' }, grid: { color: 'rgba(0,0,0,.05)' } }
-            }
-        }
-    });
-}
-
-function buildTempChart(labels, inT, outT, vent) {
-    const ctx = $('t-chart').getContext('2d');
-    if (tChart) tChart.destroy();
-
-    tChart = new Chart(ctx, {
-        type: 'line',
-        plugins: [zonePlugin(vent), nowLinePlugin, sunPlugin],
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Temperatur Innen (ohne Lüften)',
-                    data: inT.map(v => +v.toFixed(1)),
-                    borderColor: '#ea580c', pointBackgroundColor: '#ea580c',
-                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-                },
-                {
-                    label: `Temperatur Außen (${srcLabel})`,
-                    data: outT.map(v => +v.toFixed(1)),
-                    borderColor: '#2563eb', pointBackgroundColor: '#2563eb',
-                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-                }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { position: 'top' },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.parsed.y} °C`,
-                        afterBody: items => {
-                            const i = items[0].dataIndex;
-                            const d = outT[i] - inT[i];
-                            return [
-                                `Δ Temp (Außen−Innen): ${d >= 0 ? '+' : ''}${d.toFixed(1)} °C`,
-                                vent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
-                            ];
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
-                y: { title: { display: true, text: 'Temperatur (°C)' }, grid: { color: 'rgba(0,0,0,.05)' } }
-            }
-        }
-    });
-}
-
-function buildRhChart(labels, inRH, outRH, vent) {
-    const ctx = $('rh-chart').getContext('2d');
-    if (rhChart) rhChart.destroy();
-
-    rhChart = new Chart(ctx, {
-        type: 'line',
-        plugins: [zonePlugin(vent), nowLinePlugin, sunPlugin],
-        data: {
-            labels,
-            datasets: [
-                {
-                    label: 'Rel. Feuchte Innen (ohne Lüften)',
-                    data: inRH.map(v => Math.round(v)),
-                    borderColor: '#ea580c', pointBackgroundColor: '#ea580c',
-                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-                },
-                {
-                    label: `Rel. Feuchte Außen (${srcLabel})`,
-                    data: outRH.map(v => Math.round(v)),
-                    borderColor: '#2563eb', pointBackgroundColor: '#2563eb',
-                    borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-                }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            plugins: {
-                legend: { position: 'top' },
-                tooltip: {
-                    callbacks: {
-                        label: c => `${c.dataset.label}: ${c.parsed.y} %`,
-                        afterBody: items => {
-                            const i = items[0].dataIndex;
-                            const d = outRH[i] - inRH[i];
-                            return [
-                                `Δ rel. Feuchte (Außen−Innen): ${d >= 0 ? '+' : ''}${Math.round(d)} %`,
-                                vent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
-                            ];
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
-                y: { title: { display: true, text: 'Rel. Luftfeuchte (%)' }, suggestedMin: 0, suggestedMax: 100, grid: { color: 'rgba(0,0,0,.05)' } }
-            }
-        }
-    });
-}
-
+// ── Diagramme ────────────────────────────────────────────────
 // Waagerechte CO₂-Schwellenlinien (mäßig/stickig) mit Beschriftung
 const co2ThresholdPlugin = {
     id: 'co2thr',
     afterDraw(chart) {
         const { ctx: c, chartArea: ca, scales } = chart;
         if (!ca || !scales.y) return;
+        const th = THEME();
         c.save();
         c.font = '600 10px -apple-system,Segoe UI,sans-serif';
         c.textBaseline = 'bottom';
-        for (const [val, col, txt] of [[CO2_MID, '#c2410c', `mäßig ab ${CO2_MID}`], [CO2_HIGH, '#b91c1c', `stickig ab ${CO2_HIGH}`]]) {
+        for (const [val, col, txt] of [[CO2_MID, th.thrMid, `mäßig ab ${CO2_MID}`], [CO2_HIGH, th.thrHigh, `stickig ab ${CO2_HIGH}`]]) {
             const y = scales.y.getPixelForValue(val);
             if (y < ca.top || y > ca.bottom) continue;
             c.beginPath();
@@ -885,39 +760,73 @@ const co2ThresholdPlugin = {
     }
 };
 
-function buildCo2Chart(labels, inCO2) {
-    const ctx = $('co2-chart').getContext('2d');
-    if (co2Chart) co2Chart.destroy();
+// Alle vier Diagramme teilen Aufbau und Optionen und unterscheiden sich nur in
+// Datenreihen, Einheit und Achsentitel. Beim ersten Aufruf wird das Diagramm
+// angelegt, danach nur noch AKTUALISIERT – Neubauen bei jedem Tastendruck
+// (die Eingabefelder rechnen live) lässt die Diagramme sichtbar flackern.
+//   cfg: { labels, series:[{label,data,color}], unit, digits, yTitle, yScale,
+//          zones, plugins, delta, tooltipLabel }
+function renderChart(id, cfg) {
+    const known = charts[id];
+    if (known) {
+        known.data.labels = cfg.labels;
+        cfg.series.forEach((ser, i) => {
+            known.data.datasets[i].label = ser.label;
+            known.data.datasets[i].data  = ser.data;
+        });
+        known.update();
+        return;
+    }
+    const th = THEME();
+    const axis = (title, extra) => Object.assign({
+        title: { display: true, text: title, color: th.text },
+        ticks: { color: th.text },
+        grid:  { color: th.grid }
+    }, extra || {});
 
-    co2Chart = new Chart(ctx, {
+    charts[id] = new Chart($(id).getContext('2d'), {
         type: 'line',
-        plugins: [nowLinePlugin, sunPlugin, co2ThresholdPlugin],
+        plugins: [nowLinePlugin, sunPlugin].concat(cfg.zones ? [zonePlugin] : [], cfg.plugins || []),
         data: {
-            labels,
-            datasets: [{
-                label: 'CO₂ Innen (Schätzung, bei Nachtlüftung)',
-                data: inCO2.map(v => Math.round(v)),
-                borderColor: '#0d9488', pointBackgroundColor: '#0d9488',
+            labels: cfg.labels,
+            datasets: cfg.series.map(ser => ({
+                label: ser.label, data: ser.data,
+                borderColor: ser.color, pointBackgroundColor: ser.color,
                 borderWidth: 2.5, pointRadius: 2.5, pointHoverRadius: 5, tension: 0.4
-            }]
+            }))
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             plugins: {
-                legend: { position: 'top' },
+                legend: { position: 'top', labels: { color: th.text } },
                 tooltip: {
                     callbacks: {
-                        label: c => `CO₂: ${c.parsed.y} ppm (${co2Class(c.parsed.y).label})`
+                        label: cfg.tooltipLabel || (t => `${t.dataset.label}: ${t.parsed.y} ${cfg.unit}`),
+                        // Delta und Lüften-Hinweis aus den Datenreihen des Charts selbst
+                        // ableiten – eine Closure würde beim Aktualisieren veralten.
+                        afterBody: !cfg.delta ? undefined : items => {
+                            const i = items[0].dataIndex, ds = items[0].chart.data.datasets;
+                            const d = ds[1].data[i] - ds[0].data[i];
+                            return [
+                                `Δ ${cfg.delta} (Außen−Innen): ${d >= 0 ? '+' : ''}${d.toFixed(cfg.digits)} ${cfg.unit}`,
+                                curVent[i] ? '→ Lüften lohnt sich' : '→ Fenster zu'
+                            ];
+                        }
                     }
                 }
             },
-            scales: {
-                x: { title: { display: true, text: 'Uhrzeit' }, grid: { color: 'rgba(0,0,0,.05)' } },
-                y: { title: { display: true, text: 'CO₂ (ppm)' }, suggestedMin: 400, grid: { color: 'rgba(0,0,0,.05)' } }
-            }
+            scales: { x: axis('Uhrzeit'), y: axis(cfg.yTitle, cfg.yScale) }
         }
     });
+}
+
+// Farben stecken in den Chart-Optionen ⇒ beim Wechsel hell/dunkel neu aufbauen
+function resetCharts() {
+    for (const id of Object.keys(charts)) {
+        charts[id].destroy();
+        delete charts[id];
+    }
 }
 
 // ── Haupt-Berechnung ─────────────────────────────────────────
@@ -964,7 +873,8 @@ function calculate() {
     const labels = cut(timeF).map(t => t.slice(11, 16));
     const inT  = cut(sim.inT),  inRH = cut(sim.inRH), inDP = cut(sim.inDP);
     const outT = cut(tF), outRH = cut(rhF), outDP = cut(sim.outDP);
-    const vent = cut(ventF), inCO2 = cut(sim.inCO2);
+    const inCO2 = cut(sim.inCO2);
+    curVent = cut(ventF);
 
     // Optional: CO₂-Kurve auf einen gemessenen Sensorwert kalibrieren – konstanter
     // Offset, sodass „jetzt" (Index 0) dem Messwert entspricht (analog zur Temperatur).
@@ -1002,11 +912,40 @@ function calculate() {
 
     showRec(inT[0], outT[0], inDP[0], outDP[0]);
     showAirNote(inCO2[0]);
-    buildChart(labels, inDP, outDP, vent);
-    buildTempChart(labels, inT, outT, vent);
-    buildRhChart(labels, inRH, outRH, vent);
-    buildCo2Chart(labels, inCO2);
-    buildSched(labels, inT, outT, inDP, outDP, vent);
+    const th = THEME();
+    renderChart('t-chart', {
+        labels, zones: true, unit: '°C', digits: 1, delta: 'Temp', yTitle: 'Temperatur (°C)',
+        series: [
+            { label: 'Temperatur Innen (ohne Lüften)', data: r1(inT),  color: th.inside },
+            { label: `Temperatur Außen (${srcLabel})`, data: r1(outT), color: th.outside }
+        ]
+    });
+    renderChart('dp-chart', {
+        labels, zones: true, unit: '°C', digits: 1, delta: 'Taupunkt', yTitle: 'Taupunkt (°C)',
+        series: [
+            { label: 'Taupunkt Innen (ohne Lüften)', data: r1(inDP),  color: th.inside },
+            { label: `Taupunkt Außen (${srcLabel})`, data: r1(outDP), color: th.outside }
+        ]
+    });
+    renderChart('rh-chart', {
+        labels, zones: true, unit: '%', digits: 0, delta: 'rel. Feuchte',
+        yTitle: 'Rel. Luftfeuchte (%)', yScale: { suggestedMin: 0, suggestedMax: 100 },
+        series: [
+            { label: 'Rel. Feuchte Innen (ohne Lüften)', data: r0(inRH),  color: th.inside },
+            { label: `Rel. Feuchte Außen (${srcLabel})`, data: r0(outRH), color: th.outside }
+        ]
+    });
+    renderChart('co2-chart', {
+        labels, unit: 'ppm', yTitle: 'CO₂ (ppm)', yScale: { suggestedMin: 400 },
+        plugins: [co2ThresholdPlugin],
+        tooltipLabel: t => `CO₂: ${t.parsed.y} ppm (${co2Class(t.parsed.y).label})`,
+        series: [{
+            label: `CO₂ Innen (${co2Calibrated ? 'kalibriert' : 'Schätzung'}, bei Nachtlüftung)`,
+            data: r0(inCO2), color: th.co2
+        }]
+    });
+
+    buildSched(labels, inT, outT, inDP, outDP, curVent);
 
     $('card-status').style.display = '';
     $('card-chart').style.display  = '';

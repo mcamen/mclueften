@@ -4,7 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lüftungshelfer – Taupunktvergleich</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <!-- Chart.js fest auf 4.4.3 gepinnt und per Subresource Integrity abgesichert.
+         Der Hash gehört zum npm-Artefakt dist/chart.umd.js (byte-identisch zu dem,
+         was jsDelivr ausliefert); bei einem Versionswechsel muss er mit erneuert werden. -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js"
+            integrity="sha384-tgbB5AKnszdcfwcZtTfuhR3Ko1XZdlDfsLtkxiiAZiVkkXCkFmp+FQFh+V/UTo54"
+            crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
         :root {

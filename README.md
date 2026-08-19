@@ -66,17 +66,19 @@ Dadurch ergibt sich der typische **Sägezahn**: Tagsüber (Fenster zu, kleiner L
 
 ## Technik
 
-- Einzelne `index.html` (HTML/CSS/JS), kein Backend
-- [Chart.js](https://www.chartjs.org/) für die Diagramme
+- Einzelne `index.html` (HTML/CSS/JS), kein Backend, kein Build-Schritt
+- [Chart.js](https://www.chartjs.org/) für die Diagramme (feste Version, per
+  Subresource Integrity abgesichert – beim Versionswechsel den Hash mit erneuern)
 - Wetterdaten: [Brightsky](https://brightsky.dev) (DWD) und [Open-Meteo](https://open-meteo.com)
 
 ### Entwicklung
 
-Das Inline-JavaScript lässt sich mit ESLint prüfen:
+Linter und Tests laufen ohne Build-Schritt:
 
 ```bash
-npm install
-npm run lint
+npm ci
+npm run lint   # ESLint über das Inline-<script>
+npm test       # Physik-/Simulationstests (node:test)
 ```
 
 ## Lizenz

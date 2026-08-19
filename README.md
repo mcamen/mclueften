@@ -100,8 +100,12 @@ Linter und Tests laufen ohne Build-Schritt:
 ```bash
 npm ci
 npm run lint   # ESLint über das Inline-<script>
-npm test       # Physik-/Simulationstests (node:test)
+npm test       # Physik-/Zeit-/Simulationstests (node:test)
 ```
+
+Die Tests extrahieren das Inline-`<script>` aus `index.html` und führen es in einer
+`node:vm`-Sandbox aus – es wird kein Code dupliziert. Weitere Projektkonventionen stehen
+in [CLAUDE.md](CLAUDE.md).
 
 ## Lizenz
 

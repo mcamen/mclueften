@@ -3,6 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Schätzt ab, wann Lüften sich lohnt: vergleicht Temperatur und Taupunkt der Wohnung mit der Außenluft für die nächsten 24 Stunden – inklusive CO₂-Schätzung. Läuft komplett im Browser.">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" content="#2563eb" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#1e3a8a" media="(prefers-color-scheme: dark)">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌬️</text></svg>">
     <title>Lüftungshelfer – Taupunktvergleich</title>
     <!-- Chart.js fest auf 4.4.3 gepinnt und per Subresource Integrity abgesichert.
          Der Hash gehört zum npm-Artefakt dist/chart.umd.js (byte-identisch zu dem,
@@ -16,10 +21,40 @@
             --blue: #1d4ed8; --orange: #c2410c; --green: #15803d; --red: #b91c1c;
             --bg: #f8fafc; --surface: #fff; --border: #e2e8f0;
             --text: #1e293b; --muted: #64748b;
+            --accent-bg: #1d4ed8; --accent-hover: #1e40af;   /* Flächen mit weißer Schrift */
+            --hdr-1: #1e40af; --hdr-2: #2563eb;
+            /* getönte Hinweisboxen (Empfehlung, Lüftungsplan, Info) */
+            --ok-bg:#f0fdf4;   --ok-fg:#166534;   --ok-bd:#bbf7d0;
+            --bad-bg:#fef2f2;  --bad-fg:#991b1b;  --bad-bd:#fecaca;
+            --warn-bg:#fefce8; --warn-fg:#854d0e; --warn-bd:#fde68a;
+            --air-bg:#f0fdfa;  --air-fg:#0f766e;  --air-bd:#99f6e4;
+            --info-bg:#eff6ff; --info-fg:#1e40af; --info-bd:#bfdbfe;
+            /* Farben, die auch im Canvas auftauchen – Gegenstück zu THEME() */
+            --co2:#0d9488; --sun-rise:#f59e0b; --sun-set:#6366f1;
+            --zone-ok:rgba(21,128,61,.18); --zone-no:rgba(185,28,28,.10);
             --r: 12px; --sh: 0 1px 4px rgba(0,0,0,.08),0 0 0 1px rgba(0,0,0,.04);
         }
+        /* Dunkles Farbschema – folgt der Systemeinstellung. Die passenden
+           Diagramm-Farben stecken in THEME() im Skript-Teil. */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --blue:#60a5fa; --orange:#fb923c; --green:#4ade80; --red:#f87171;
+                --bg:#0f172a; --surface:#1e293b; --border:#334155;
+                --text:#e2e8f0; --muted:#94a3b8;
+                --accent-bg:#2563eb; --accent-hover:#3b82f6;
+                --hdr-1:#172554; --hdr-2:#1e40af;
+                --ok-bg:#0d2a1a;   --ok-fg:#86efac;   --ok-bd:#166534;
+                --bad-bg:#2c1416;  --bad-fg:#fca5a5;  --bad-bd:#7f1d1d;
+                --warn-bg:#2b2410; --warn-fg:#fcd34d; --warn-bd:#78350f;
+                --air-bg:#0c2926;  --air-fg:#5eead4;  --air-bd:#115e59;
+                --info-bg:#152238; --info-fg:#bfdbfe; --info-bd:#1e40af;
+                --co2:#2dd4bf; --sun-rise:#f59e0b; --sun-set:#818cf8;
+                --zone-ok:rgba(74,222,128,.22); --zone-no:rgba(248,113,113,.16);
+                --sh: 0 1px 4px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06);
+            }
+        }
         body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; line-height:1.5; }
-        .header { background:linear-gradient(135deg,#1e40af,#2563eb); color:#fff; padding:1.75rem 2rem 1.4rem; }
+        .header { background:linear-gradient(135deg,var(--hdr-1),var(--hdr-2)); color:#fff; padding:1.75rem 2rem 1.4rem; }
         .header h1 { font-size:1.55rem; font-weight:800; letter-spacing:-.02em; }
         .header p  { margin-top:.3rem; opacity:.82; font-size:.88rem; max-width:560px; }
         .layout { max-width:960px; margin:0 auto; padding:1.4rem 1.2rem; display:grid; gap:1rem; }
@@ -36,19 +71,19 @@
         .tin:focus-within { border-color:var(--blue); }
         .tin input { border:none; background:transparent; font-size:1.2rem; font-weight:700; width:68px; text-align:right; outline:none; color:var(--text); }
         .tin span { color:var(--muted); font-size:1rem; }
-        .btn { background:var(--blue); color:#fff; border:none; border-radius:8px; padding:.48rem 1.2rem; font-size:.9rem; font-weight:700; cursor:pointer; transition:background .15s,transform .1s; }
-        .btn:hover { background:#1e40af; }
+        .btn { background:var(--accent-bg); color:#fff; border:none; border-radius:8px; padding:.48rem 1.2rem; font-size:.9rem; font-weight:700; cursor:pointer; transition:background .15s,transform .1s; }
+        .btn:hover { background:var(--accent-hover); }
         .btn:active { transform:scale(.98); }
         .btn:disabled { background:var(--border); color:var(--muted); cursor:default; }
-        .btn-sm { background:var(--blue); color:#fff; border:none; border-radius:6px; padding:.38rem .85rem; font-size:.85rem; font-weight:600; cursor:pointer; }
-        .btn-sm:hover { background:#1e40af; }
+        .btn-sm { background:var(--accent-bg); color:#fff; border:none; border-radius:6px; padding:.38rem .85rem; font-size:.85rem; font-weight:600; cursor:pointer; }
+        .btn-sm:hover { background:var(--accent-hover); }
 
         /* location */
         .loc-info { margin-top:.75rem; font-size:.82rem; color:var(--muted); display:flex; align-items:center; gap:.5rem; }
         .loc-info.err { color:var(--red); }
         .city-search { display:none; margin-top:.7rem; gap:.5rem; flex-wrap:wrap; align-items:center; }
         .city-search.show { display:flex; }
-        .city-search input { border:2px solid var(--border); border-radius:8px; padding:.38rem .65rem; font-size:.88rem; outline:none; transition:border-color .15s; min-width:190px; }
+        .city-search input { border:2px solid var(--border); border-radius:8px; padding:.38rem .65rem; font-size:.88rem; outline:none; transition:border-color .15s; min-width:190px; background:var(--bg); color:var(--text); }
         .city-search input:focus { border-color:var(--blue); }
         .sel { box-sizing:border-box; max-width:100%; border:2px solid var(--border); border-radius:8px; padding:.38rem .55rem; font-size:.88rem; font-weight:600; background:var(--bg); color:var(--text); outline:none; cursor:pointer; transition:border-color .15s; }
         .sel:focus { border-color:var(--blue); }
@@ -78,10 +113,10 @@
         /* recommendation */
         .rec { padding:.85rem 1rem; border-radius:8px; font-weight:600; font-size:.95rem; display:flex; align-items:flex-start; gap:.6rem; }
         .rec .ico { font-size:1.15rem; flex-shrink:0; margin-top:.05rem; }
-        .rec-open    { background:#f0fdf4; color:#166534; border:1px solid #bbf7d0; }
-        .rec-close   { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; }
-        .rec-neutral { background:#fefce8; color:#854d0e; border:1px solid #fde68a; }
-        .rec-air     { background:#f0fdfa; color:#0f766e; border:1px solid #99f6e4; margin-top:.5rem; }
+        .rec-open    { background:var(--ok-bg);   color:var(--ok-fg);   border:1px solid var(--ok-bd); }
+        .rec-close   { background:var(--bad-bg);  color:var(--bad-fg);  border:1px solid var(--bad-bd); }
+        .rec-neutral { background:var(--warn-bg); color:var(--warn-fg); border:1px solid var(--warn-bd); }
+        .rec-air     { background:var(--air-bg);  color:var(--air-fg);  border:1px solid var(--air-bd); margin-top:.5rem; }
 
         /* chart */
         .chart-wrap { position:relative; height:280px; }
@@ -92,13 +127,13 @@
         /* schedule */
         .sched-list { display:flex; flex-direction:column; gap:.4rem; }
         .sched-item { display:flex; align-items:center; gap:.7rem; padding:.5rem .8rem; border-radius:7px; font-size:.87rem; }
-        .sched-open  { background:#f0fdf4; color:#166534; }
-        .sched-close { background:#fef2f2; color:#991b1b; }
+        .sched-open  { background:var(--ok-bg);  color:var(--ok-fg); }
+        .sched-close { background:var(--bad-bg); color:var(--bad-fg); }
         .sched-time { font-weight:700; font-variant-numeric:tabular-nums; min-width:160px; }
         .sched-dp   { opacity:.75; font-size:.81rem; }
 
         /* info */
-        .info { background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px; padding:.8rem .95rem; font-size:.82rem; color:#1e40af; line-height:1.65; }
+        .info { background:var(--info-bg); border:1px solid var(--info-bd); border-radius:8px; padding:.8rem .95rem; font-size:.82rem; color:var(--info-fg); line-height:1.65; }
 
         /* spinner */
         .spin { display:inline-block; width:13px; height:13px; border:2px solid currentColor; border-top-color:transparent; border-radius:50%; animation:sp .7s linear infinite; flex-shrink:0; }
@@ -163,11 +198,11 @@
                 <span>ppm</span>
             </div>
         </div>
-        <div class="loc-info" id="loc-info">
+        <div class="loc-info" id="loc-info" role="status" aria-live="polite">
             <span class="spin"></span><span>Standort wird ermittelt …</span>
         </div>
         <div class="city-search show" id="city-search">
-            <span style="font-size:.84rem;font-weight:600">Ort ändern:</span>
+            <label for="city-in" style="font-size:.84rem;font-weight:600">Ort ändern:</label>
             <input type="text" id="city-in" placeholder="z.B. Wien, München, Zürich" value="Tübingen">
             <button class="btn-sm" onclick="searchCity()">Suchen</button>
         </div>
@@ -239,56 +274,56 @@
                 <div class="stat-l" id="v-co2-l">CO₂ geschätzt (ppm)</div>
             </div>
         </div>
-        <div class="rec" id="rec">–</div>
-        <div class="rec rec-air" id="rec-air" style="display:none"></div>
+        <div class="rec" id="rec" role="status" aria-live="polite">–</div>
+        <div class="rec rec-air" id="rec-air" role="status" aria-live="polite" style="display:none"></div>
     </div>
 
     <!-- Temperatur-Diagramm -->
     <div class="card" id="card-temp" style="display:none">
         <div class="card-title">Temperatur-Verlauf (nächste 24 h)</div>
-        <div class="chart-wrap"><canvas id="t-chart"></canvas></div>
+        <div class="chart-wrap"><canvas id="t-chart" role="img" aria-label="Diagramm: Temperaturverlauf innen (ohne Lüften) und außen über die nächsten 24 Stunden. Die Werte stehen als Text im Lüftungsplan darunter."></canvas></div>
         <div class="legend">
-            <span class="legend-item"><span class="dot" style="background:rgba(21,128,61,.18)"></span>Lüften lohnt sich</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #f59e0b"></span>☀ Aufgang</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #6366f1"></span>☾ Untergang</span>
+            <span class="legend-item"><span class="dot" style="background:var(--zone-ok)"></span>Lüften lohnt sich</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed currentColor"></span>Jetzt</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted var(--sun-rise)"></span>☀ Aufgang</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted var(--sun-set)"></span>☾ Untergang</span>
         </div>
     </div>
 
     <!-- Taupunkt-Diagramm -->
     <div class="card" id="card-chart" style="display:none">
         <div class="card-title">Taupunkt-Verlauf (nächste 24 h)</div>
-        <div class="chart-wrap"><canvas id="dp-chart"></canvas></div>
+        <div class="chart-wrap"><canvas id="dp-chart" role="img" aria-label="Diagramm: Taupunktverlauf innen (ohne Lüften) und außen über die nächsten 24 Stunden. Die Werte stehen als Text im Lüftungsplan darunter."></canvas></div>
         <div class="legend">
-            <span class="legend-item"><span class="dot" style="background:rgba(21,128,61,.18)"></span>Lüften lohnt sich (kühler &amp; nicht feuchter)</span>
-            <span class="legend-item"><span class="dot" style="background:rgba(185,28,28,.1)"></span>Fenster zu</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #f59e0b"></span>☀ Aufgang</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #6366f1"></span>☾ Untergang</span>
+            <span class="legend-item"><span class="dot" style="background:var(--zone-ok)"></span>Lüften lohnt sich (kühler &amp; nicht feuchter)</span>
+            <span class="legend-item"><span class="dot" style="background:var(--zone-no)"></span>Fenster zu</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed currentColor"></span>Jetzt</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted var(--sun-rise)"></span>☀ Aufgang</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted var(--sun-set)"></span>☾ Untergang</span>
         </div>
     </div>
 
     <!-- Luftfeuchte-Diagramm -->
     <div class="card" id="card-rh" style="display:none">
         <div class="card-title">Luftfeuchte-Verlauf (nächste 24 h)</div>
-        <div class="chart-wrap"><canvas id="rh-chart"></canvas></div>
+        <div class="chart-wrap"><canvas id="rh-chart" role="img" aria-label="Diagramm: Verlauf der relativen Luftfeuchte innen (ohne Lüften) und außen über die nächsten 24 Stunden."></canvas></div>
         <div class="legend">
-            <span class="legend-item"><span class="dot" style="background:rgba(21,128,61,.18)"></span>Lüften lohnt sich</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #f59e0b"></span>☀ Aufgang</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted #6366f1"></span>☾ Untergang</span>
+            <span class="legend-item"><span class="dot" style="background:var(--zone-ok)"></span>Lüften lohnt sich</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed currentColor"></span>Jetzt</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted var(--sun-rise)"></span>☀ Aufgang</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dotted var(--sun-set)"></span>☾ Untergang</span>
         </div>
     </div>
 
     <!-- CO₂-Diagramm -->
     <div class="card" id="card-co2" style="display:none">
         <div class="card-title">CO₂-Verlauf (Schätzung, bei Nachtlüftung)</div>
-        <div class="chart-wrap"><canvas id="co2-chart"></canvas></div>
+        <div class="chart-wrap"><canvas id="co2-chart" role="img" aria-label="Diagramm: geschätzter CO₂-Verlauf innen bei Nachtlüftung über die nächsten 24 Stunden. Der aktuelle Wert steht als Zahl im Status oben."></canvas></div>
         <div class="legend">
-            <span class="legend-item"><span class="dot" style="background:#0d9488"></span>CO₂ Innen (bei Nachtlüftung)</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #c2410c"></span>mäßig ab 1000</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #b91c1c"></span>stickig ab 1400</span>
-            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed #555"></span>Jetzt</span>
+            <span class="legend-item"><span class="dot" style="background:var(--co2)"></span>CO₂ Innen (bei Nachtlüftung)</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed var(--orange)"></span>mäßig ab 1000</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed var(--red)"></span>stickig ab 1400</span>
+            <span class="legend-item"><span style="display:inline-block;width:16px;height:0;border-top:2px dashed currentColor"></span>Jetzt</span>
         </div>
     </div>
 
@@ -490,10 +525,11 @@ function simulate(outT, outRH, userT, anchorIdx, hours) {
 // CO₂-Einstufung (Status-Ampel + Schwellen)
 const CO2_MID = 1000, CO2_HIGH = 1400;
 function co2Class(ppm) {
-    if (ppm >= CO2_HIGH) return { label: 'stickig',     color: '#b91c1c' };
-    if (ppm >= CO2_MID)  return { label: 'mäßig',       color: '#c2410c' };
-    return                      { label: 'gut',          color: '#15803d' };
+    if (ppm >= CO2_HIGH) return { label: 'stickig',     color: 'var(--red)' };
+    if (ppm >= CO2_MID)  return { label: 'mäßig',       color: 'var(--orange)' };
+    return                      { label: 'gut',          color: 'var(--green)' };
 }
+
 // Kalibrierung auf einen gemessenen CO₂-Wert: skaliert den ÜBERSCHUSS über der
 // Außenbasis, statt die Kurve per konstantem Offset zu verschieben. Ein Offset
 // würde die Nachtwerte (nahe Außenbasis) unter 420 ppm und sogar ins Negative
@@ -521,13 +557,21 @@ let calManual = false;     // Kalibrierwert vom Nutzer manuell überschrieben?
 const DEFAULT_LOC = { lat: 48.52, lon: 9.06, name: 'Tübingen' };
 
 // ── Diagramm-Farben ─────────────────────────────────────────
-// Canvas kennt keine CSS-Variablen – die Diagramme brauchen ihre Farben als Werte.
+// Canvas kennt keine CSS-Variablen – die Diagramme brauchen ihre Farben als
+// Werte. Gegenstück zum @media-Block (prefers-color-scheme: dark) im Kopf.
+const prefersDark = () => typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
 function THEME() {
-    return { text:'#1e293b', grid:'rgba(0,0,0,.05)', chip:'rgba(255,255,255,.78)',
-        inside:'#ea580c', outside:'#2563eb', co2:'#0d9488',
-        ventOk:'rgba(21,128,61,.12)', ventNo:'rgba(185,28,28,.07)',
-        now:'rgba(30,30,30,.45)', thrMid:'#c2410c', thrHigh:'#b91c1c',
-        sunRise:'#f59e0b', sunSet:'#6366f1' };
+    return prefersDark()
+        ? { text:'#cbd5e1', grid:'rgba(255,255,255,.09)', chip:'rgba(15,23,42,.85)',
+            inside:'#fb923c', outside:'#60a5fa', co2:'#2dd4bf',
+            ventOk:'rgba(74,222,128,.15)', ventNo:'rgba(248,113,113,.11)',
+            now:'rgba(226,232,240,.55)', thrMid:'#fb923c', thrHigh:'#f87171',
+            sunRise:'#f59e0b', sunSet:'#818cf8' }
+        : { text:'#1e293b', grid:'rgba(0,0,0,.05)', chip:'rgba(255,255,255,.78)',
+            inside:'#ea580c', outside:'#2563eb', co2:'#0d9488',
+            ventOk:'rgba(21,128,61,.12)', ventNo:'rgba(185,28,28,.07)',
+            now:'rgba(30,30,30,.45)', thrMid:'#c2410c', thrHigh:'#b91c1c',
+            sunRise:'#f59e0b', sunSet:'#6366f1' };
 }
 
 // ── Lüftungs-Entscheidung ─────────────────────────────────────
@@ -1150,6 +1194,12 @@ function init() {
 // ══ APP-START – der Testharness in test/physics.test.mjs schneidet hier ab ══
 // Alles ab hier fasst das DOM an; darüber stehen nur Definitionen.
 $('t-in').addEventListener('keydown', e => { if (e.key === 'Enter') calculate(); });
+// Wechsel zwischen hellem und dunklem Schema: Diagramme mit neuen Farben aufbauen
+if (typeof matchMedia === 'function')
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        resetCharts();
+        if (wx) calculate();
+    });
 init();
 </script>
 </body>

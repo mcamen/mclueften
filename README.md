@@ -19,6 +19,7 @@ Eine kleine Single-Page-Web-App, die abschätzt, **wann sich Lüften lohnt** –
 - **Live-Wetterdaten** aus zwei Quellen: **DWD** (über [Brightsky](https://brightsky.dev), Standard, v. a. Deutschland) oder [Open-Meteo](https://open-meteo.com). Standort-Standard: Tübingen, beliebiger Ort per Suche.
 - **Kalibrierung** der Außentemperatur auf eine echte Messung: automatisch mit der aktuellen DWD-Stationsmessung vorbelegt, manuell überschreibbar (Offset-Korrektur, Taupunkt bleibt erhalten).
 - **Einstellbares Wohnungs-Profil** (Vorlagen + Slider für Wärmeträgheit und innere Last, Personenzahl).
+- **Helles und dunkles Farbschema**, folgt automatisch der Systemeinstellung.
 - Ort, Quelle und Profil bleiben gespeichert (localStorage); Daten werden alle 30 min aktualisiert.
 
 ## Nutzung

@@ -425,6 +425,12 @@ const profile = {
 const CO2_OUT = 420, CO2_PER_PERSON = 180;
 const CO2_OPEN_H = 22, CO2_CLOSE_H = 8, CO2_ACH_OPEN = 3.0;
 
+// Ein Zeitschritt einer Ausgleichsbilanz: exakte Lösung von
+// dx/dt = rate·(x_eq − x) für eine Stunde, mit decay = e^(−rate).
+// Gleicher Gleichgewichtswert wie ein Euler-Schritt, aber stabil und
+// schrittweitenunabhängig – einheitlich für Wärme, Feuchte und CO₂.
+const relax = (prev, eq, decay) => eq + (prev - eq) * decay;
+
 // outT/outRH sind die VOLLEN Arrays; anchorIdx = Index der aktuellen Stunde
 // (Kalibrierungsanker). Die Simulation läuft über den ganzen Bereich, damit
 // sie bis „jetzt" eingeschwungen ist; das Anzeige-Fenster wird später geschnitten.
@@ -443,10 +449,11 @@ function simulate(outT, outRH, userT, anchorIdx, hours) {
     // und ist die ehrliche Basis für „lohnt sich Lüften?". Ob Lüften nützt,
     // entscheidet anschließend der Vergleich mit der Außenluft (kühler/trockener);
     // abkühlen kann die Wohnung dabei höchstens bis auf die Außentemperatur.
-    const inT = new Array(n);
+    // Wärmebilanz dT/dt = kT·(T_außen − T) + GAIN ⇒ Gleichgewicht außen + GAIN/kT
+    const inT = new Array(n), decayT = Math.exp(-kT);
     inT[0] = outT[0] + 1.0;
     for (let h = 1; h < n; h++)
-        inT[h] = inT[h-1] + kT * (outT[h] - inT[h-1]) + GAIN;
+        inT[h] = relax(inT[h-1], outT[h] + GAIN / kT, decayT);
 
     // Kalibrierung: gemessene Innentemperatur als Anker für die aktuelle Stunde
     const offT = userT - inT[anchorIdx];
@@ -455,10 +462,10 @@ function simulate(outT, outRH, userT, anchorIdx, hours) {
     // ── Innere absolute Feuchte ohne Lüften ──
     // Person gibt Feuchte ab (+MOISTURE/h), Grundinfiltration gleicht langsam
     // Richtung Außenluft aus → Gleichgewicht ≈ Außen + MOISTURE/INFILTR.
-    const inAH = new Array(n);
+    const inAH = new Array(n), decayM = Math.exp(-INFILTR);
     inAH[0] = outAH[0] + MOISTURE / INFILTR;
     for (let h = 1; h < n; h++)
-        inAH[h] = inAH[h-1] + MOISTURE - INFILTR * (inAH[h-1] - outAH[h]);
+        inAH[h] = relax(inAH[h-1], outAH[h] + MOISTURE / INFILTR, decayM);
 
     const inRH = inT.map((t, i) => relHum(t, inAH[i]));
     const inDP = inT.map((t, i) => dewPoint(t, inRH[i]));
@@ -467,18 +474,15 @@ function simulate(outT, outRH, userT, anchorIdx, hours) {
     // Personen erzeugen CO₂; der Luftwechsel führt es Richtung Außenluft ab.
     // Nachts (Fenster offen) ist der Luftwechsel hoch → CO₂ fällt fast auf außen,
     // tagsüber (zu) nur Grundinfiltration → CO₂ baut sich auf.
-    // Pro Stunde wird die EXAKTE Lösung verwendet (stabil auch bei hohem Luftwechsel):
     //   C(t+1) = C_eq + (C(t) − C_eq)·e^(−ach),  C_eq = außen + Erzeugung/ach
-    const co2Gen   = profile.persons * CO2_PER_PERSON;
-    const co2IsOpen = i => hrs[i] >= CO2_OPEN_H || hrs[i] < CO2_CLOSE_H;
-    const co2Step  = (prev, ach) => {
-        const eq = CO2_OUT + co2Gen / ach;
-        return eq + (prev - eq) * Math.exp(-ach);
-    };
+    const co2Gen = profile.persons * CO2_PER_PERSON;
+    const co2Ach = h => (hrs[h] >= CO2_OPEN_H || hrs[h] < CO2_CLOSE_H) ? CO2_ACH_OPEN : INFILTR;
     const inCO2 = new Array(n);
-    inCO2[0] = CO2_OUT + co2Gen / (co2IsOpen(0) ? CO2_ACH_OPEN : INFILTR);
-    for (let h = 1; h < n; h++)
-        inCO2[h] = co2Step(inCO2[h-1], co2IsOpen(h) ? CO2_ACH_OPEN : INFILTR);
+    inCO2[0] = CO2_OUT + co2Gen / co2Ach(0);
+    for (let h = 1; h < n; h++) {
+        const ach = co2Ach(h);
+        inCO2[h] = relax(inCO2[h-1], CO2_OUT + co2Gen / ach, Math.exp(-ach));
+    }
 
     return { inT, inRH, inDP, outDP, outAH, inAH, inCO2 };
 }

@@ -26,13 +26,14 @@ code = code.slice(0, cut);
 // sammelt ein angehängter Ausdruck die benötigten Namen im selben Scope ein.
 const EXPORTS = [
     'dewPoint', 'absHum', 'relHum', 'rhFromDew', 'sunTimes', 'hm', 'ventBenefit',
-    'simulate', 'co2Class', 'co2Scale', 'nowIndex', 'tsHour', 'tsOffsetH', 'CO2_OUT'
+    'simulate', 'co2Class', 'co2Scale', 'nowIndex', 'tsHour', 'tsOffsetH',
+    'profile', 'CO2_OUT'
 ];
 const ctx = { Math, Date, String, Number, JSON, Object, Array, console, isNaN, parseFloat };
 vm.createContext(ctx);
 const {
     dewPoint, absHum, relHum, rhFromDew, sunTimes, hm, ventBenefit, simulate,
-    co2Class, co2Scale, nowIndex, tsHour, tsOffsetH, CO2_OUT
+    co2Class, co2Scale, nowIndex, tsHour, tsOffsetH, profile, CO2_OUT
 } = vm.runInContext(`${code}\n;({ ${EXPORTS.join(', ')} })`, ctx);
 
 test('dewPoint: bei 100 % rel. Feuchte ≈ Temperatur', () => {
@@ -120,6 +121,15 @@ test('simulate: Innentemperatur trifft den Anker exakt', () => {
         const sim = simulate(outT, outRH, 26.5, anchor);
         assert.ok(Math.abs(sim.inT[anchor] - 26.5) < 1e-9, `Anker ${anchor}`);
     }
+});
+
+test('simulate: Feuchtebilanz läuft ins Gleichgewicht außen + MOISTURE/INFILTR', () => {
+    // Prüft die exakte Integration: Gleichgewicht wie beim Euler-Verfahren,
+    // aber sauber erreicht statt übersprungen.
+    const n = 72;
+    const sim = simulate(Array(n).fill(20), Array(n).fill(60), 24, 0);
+    const dAH = sim.inAH[n - 1] - sim.outAH[n - 1];
+    assert.ok(Math.abs(dAH - profile.MOISTURE / profile.INFILTR) < 1e-3, `ΔAH=${dAH}`);
 });
 
 test('CO₂-Modell: baut sich tagsüber (zu) auf, fällt nachts (offen)', () => {

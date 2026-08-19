@@ -29,6 +29,10 @@ Einfach `index.html` im Browser öffnen – Live-Wetterdaten werden automatisch 
 
 Die Innen-Kurven sind eine **freilaufende Prognose „ohne Lüften"**: Sie zeigen, wie warm und feucht es würde, wenn die Fenster geschlossen blieben (Person/Geräte als Wärme- und Feuchtequelle, gedämpfte Kopplung an außen). Lüften lohnt sich dort, wo die Außenluft dieses Innenklima verbessert. Durch Lüften kühlt die Wohnung höchstens bis auf die gleichzeitige Außentemperatur ab. Alle Werte sind Schätzungen – die eingegebene Innentemperatur und die optionale Außentemperatur-Messung dienen als Kalibrierungsanker.
 
+Alle Ausgleichsvorgänge (Wärme, Feuchte, CO₂) werden pro Stunde mit der **exakten Lösung**
+der jeweiligen Bilanz gerechnet – `x(t+1) = x_eq + (x(t) − x_eq)·e^(−rate)` – statt mit einem
+Euler-Schritt: gleiches Gleichgewicht, aber stabil und unabhängig von der Schrittweite.
+
 ## Zeitfenster & Zeitzonen
 
 Das 24-h-Fenster beginnt bei der Stunde, in der „jetzt" liegt. Welche Stunde das ist,

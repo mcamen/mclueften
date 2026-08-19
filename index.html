@@ -55,6 +55,9 @@
         .chk { display:flex; align-items:center; gap:.45rem; font-size:.88rem; font-weight:600; cursor:pointer; }
         .chk input { width:16px; height:16px; accent-color:var(--blue); cursor:pointer; }
         .cal-note { margin-top:.4rem; font-size:.78rem; color:var(--muted); min-height:1em; }
+        /* Validierungshinweis direkt am Eingabefeld (statt blockierendem alert) */
+        .err-note { margin-top:.45rem; font-size:.82rem; font-weight:600; color:var(--red); }
+        .err-note:empty { display:none; }
 
         /* profile: vertikale, kompakte Anordnung (Kopfzeile + Slider darunter) */
         .prof-row { margin-top:.7rem; }
@@ -131,6 +134,7 @@
             </div>
             <button class="btn" id="btn-calc" onclick="calculate()" disabled>Berechnen</button>
         </div>
+        <div class="err-note" id="t-err" role="alert"></div>
         <div class="input-row" style="margin-top:.7rem">
             <label for="src">Datenquelle</label>
             <select id="src" class="sel" onchange="changeSource()">
@@ -345,11 +349,12 @@ function rhFromDew(T, Td) {   // % aus Temperatur und Taupunkt (°C)
 }
 
 // Sonnenauf-/untergang (USNO-Algorithmus) → lokale Bruchstunden, oder null
-// bei Polartag/-nacht. tz-Versatz wird aus der Browserzeit übernommen.
-function sunTimes(date, lat, lon) {
+// bei Polartag/-nacht. tzHours = UTC-Versatz des ORTES (aus dem Zeitstempel der
+// Wetterdaten); ohne Angabe fällt die Funktion auf die Browser-Zeitzone zurück.
+function sunTimes(date, lat, lon, tzHours) {
     const rad = Math.PI / 180, deg = 180 / Math.PI, zenith = 90.833;
     const N = Math.floor((date - new Date(date.getFullYear(), 0, 0)) / 864e5);
-    const tz = -date.getTimezoneOffset() / 60;
+    const tz = tzHours != null ? tzHours : -date.getTimezoneOffset() / 60;
     const lngHour = lon / 15;
     const calc = rising => {
         const t = N + (((rising ? 6 : 18) - lngHour) / 24);
@@ -376,6 +381,34 @@ function hm(h) {
     return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
 }
 
+// ── Zeit ─────────────────────────────────────────────────────
+// Beide Quellen liefern ISO-Zeitstempel in der Ortszeit des ABGEFRAGTEN ORTES
+// samt UTC-Versatz ("2026-08-19T14:00:00+02:00"). Alles Zeitliche wird daraus
+// abgeleitet und NIE aus der Browser-Uhr – sonst verschiebt sich das Fenster
+// bei Orten in einer anderen Zeitzone und an den Umstellungstagen der
+// Sommerzeit (23- bzw. 25-Stunden-Tag) um Stunden.
+const tsHour = ts => +ts.slice(11, 13);   // Stunde am Ort (0…23)
+
+// UTC-Versatz des Zeitstempels in Stunden (Fallback: Browser-Zeitzone)
+function tsOffsetH(ts) {
+    if (/Z$/.test(ts)) return 0;
+    const m = /([+-])(\d{2}):?(\d{2})$/.exec(ts);
+    if (!m) return -new Date().getTimezoneOffset() / 60;
+    return (m[1] === '-' ? -1 : 1) * (+m[2] + +m[3] / 60);
+}
+
+// Index der Stunde, in der „jetzt" liegt (letzter Zeitstempel ≤ jetzt).
+// Liegt der ganze Datensatz in der Zukunft, bleibt es beim ersten Eintrag.
+function nowIndex(times, now) {
+    const t = now == null ? Date.now() : now;
+    let idx = 0;
+    for (let i = 0; i < times.length; i++) {
+        if (Date.parse(times[i]) > t) break;
+        idx = i;
+    }
+    return idx;
+}
+
 // ── Innen-Simulation (freilaufend, ohne Lüften) ───────────────
 // Einstellbares Wohnungs-Profil (über die Slider veränderbar):
 const profile = {
@@ -395,9 +428,12 @@ const CO2_OPEN_H = 22, CO2_CLOSE_H = 8, CO2_ACH_OPEN = 3.0;
 // outT/outRH sind die VOLLEN Arrays; anchorIdx = Index der aktuellen Stunde
 // (Kalibrierungsanker). Die Simulation läuft über den ganzen Bereich, damit
 // sie bis „jetzt" eingeschwungen ist; das Anzeige-Fenster wird später geschnitten.
-function simulate(outT, outRH, userT, anchorIdx) {
+// hours = Ortsstunde je Schritt (steuert das nächtliche Lüftungsfenster beim CO₂);
+// ohne Angabe zählt der Index als Stunde.
+function simulate(outT, outRH, userT, anchorIdx, hours) {
     const n = outT.length;
     const { kT, GAIN, INFILTR, MOISTURE } = profile;
+    const hrs = hours || outT.map((_, i) => i % 24);
     const outAH = outT.map((t, i) => absHum(t, outRH[i]));
     const outDP = outT.map((t, i) => dewPoint(t, outRH[i]));
 
@@ -434,7 +470,7 @@ function simulate(outT, outRH, userT, anchorIdx) {
     // Pro Stunde wird die EXAKTE Lösung verwendet (stabil auch bei hohem Luftwechsel):
     //   C(t+1) = C_eq + (C(t) − C_eq)·e^(−ach),  C_eq = außen + Erzeugung/ach
     const co2Gen   = profile.persons * CO2_PER_PERSON;
-    const co2IsOpen = i => { const hr = i % 24; return hr >= CO2_OPEN_H || hr < CO2_CLOSE_H; };
+    const co2IsOpen = i => hrs[i] >= CO2_OPEN_H || hrs[i] < CO2_CLOSE_H;
     const co2Step  = (prev, ach) => {
         const eq = CO2_OUT + co2Gen / ach;
         return eq + (prev - eq) * Math.exp(-ach);
@@ -453,6 +489,15 @@ function co2Class(ppm) {
     if (ppm >= CO2_HIGH) return { label: 'stickig',     color: '#b91c1c' };
     if (ppm >= CO2_MID)  return { label: 'mäßig',       color: '#c2410c' };
     return                      { label: 'gut',          color: '#15803d' };
+}
+// Kalibrierung auf einen gemessenen CO₂-Wert: skaliert den ÜBERSCHUSS über der
+// Außenbasis, statt die Kurve per konstantem Offset zu verschieben. Ein Offset
+// würde die Nachtwerte (nahe Außenbasis) unter 420 ppm und sogar ins Negative
+// drücken; das Skalieren korrigiert stattdessen genau das, was unsicher ist –
+// Belegung und Luftwechsel. Messwerte ≤ Außenbasis werden auf die Basis geklemmt.
+function co2Scale(model, measured) {
+    const excess = model - CO2_OUT;
+    return excess > 1 ? Math.max(0, measured - CO2_OUT) / excess : 1;
 }
 
 // ── State ─────────────────────────────────────────────────────
@@ -589,7 +634,9 @@ async function fetchWeather(lat, lon) {
     return source === 'dwd' ? fetchBrightsky(lat, lon) : fetchOpenMeteo(lat, lon);
 }
 
-const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+// Datum in der Zeitzone der QUELLE (nicht des Browsers) – "YYYY-MM-DD".
+// sv-SE formatiert von Haus aus im ISO-Stil.
+const ymdTZ = (d, tz) => new Intl.DateTimeFormat('sv-SE', { timeZone: tz }).format(d);
 
 async function fetchOpenMeteo(lat, lon) {
     // 48 h (heute + morgen) für ein rollendes Fenster ab „jetzt"
@@ -598,7 +645,13 @@ async function fetchOpenMeteo(lat, lon) {
             + `&forecast_days=2&timezone=auto`;
     const r = await fetch(u);
     if (!r.ok) throw new Error('Open-Meteo-Daten nicht verfügbar');
-    return r.json();
+    const j = await r.json();
+    // Open-Meteo liefert Ortszeit OHNE Versatz ("2026-08-19T14:00"). Versatz
+    // anhängen, damit die Zeitstempel – wie bei Brightsky – absolut deutbar sind.
+    const off = j.utc_offset_seconds || 0, a = Math.abs(off);
+    const suffix = `${off < 0 ? '-' : '+'}${String(Math.floor(a / 3600)).padStart(2,'0')}:${String(Math.floor(a % 3600 / 60)).padStart(2,'0')}`;
+    j.hourly.time = j.hourly.time.map(t => t.length > 16 ? t : `${t}:00${suffix}`);
+    return j;
 }
 
 // DWD via Brightsky (api.brightsky.dev) – DWD MOSMIX/Beobachtungen als JSON.
@@ -607,7 +660,7 @@ async function fetchBrightsky(lat, lon) {
     const now = new Date();
     const endDay = new Date(now.getTime() + 2 * 864e5);   // last_date ist exklusiv ⇒ +2 Tage
     const u = `https://api.brightsky.dev/weather?lat=${lat}&lon=${lon}`
-            + `&date=${ymd(now)}&last_date=${ymd(endDay)}&tz=Europe%2FBerlin`;
+            + `&date=${ymdTZ(now, 'Europe/Berlin')}&last_date=${ymdTZ(endDay, 'Europe/Berlin')}&tz=Europe%2FBerlin`;
     const r = await fetch(u);
     if (!r.ok) throw new Error('DWD-Daten (Brightsky) nicht verfügbar');
     const j = await r.json();
@@ -652,10 +705,20 @@ const fmt = v => (+v).toFixed(1);
 const r1 = a => a.map(v => +v.toFixed(1));   // Datenreihe auf 1 Nachkommastelle
 const r0 = a => a.map(v => Math.round(v));
 
+// msg kann Nutzereingaben enthalten (z. B. den gesuchten Ortsnamen in einer
+// Fehlermeldung) → als Text setzen, nicht als HTML.
 function setLoc(msg, err = false, spin = false) {
     const el = $('loc-info');
     el.className = 'loc-info' + (err ? ' err' : '');
-    el.innerHTML = (spin ? '<span class="spin"></span>' : '') + `<span>${msg}</span>`;
+    el.textContent = '';
+    if (spin) {
+        const sp = document.createElement('span');
+        sp.className = 'spin';
+        el.appendChild(sp);
+    }
+    const txt = document.createElement('span');
+    txt.textContent = msg;
+    el.appendChild(txt);
 }
 
 // Hinweistext zur Außentemperatur-Kalibrierung (DWD-Messung + angewandter Offset)
@@ -834,9 +897,12 @@ function calculate() {
     if (!wx) return;
     const userT = parseFloat($('t-in').value);
     if (isNaN(userT) || userT < 5 || userT > 50) {
-        alert('Bitte eine gültige Temperatur zwischen 5 und 50 °C eingeben.');
+        // Inline melden statt alert(): calculate() hängt an jedem oninput –
+        // ein modaler Dialog je Tastendruck bzw. Slider-Schritt wäre unbenutzbar.
+        $('t-err').textContent = 'Bitte eine Innentemperatur zwischen 5 und 50 °C eingeben.';
         return;
     }
+    $('t-err').textContent = '';
 
     const h     = wx.hourly;
     const timeF = h.time;
@@ -844,9 +910,17 @@ function calculate() {
     const rhF   = h.relative_humidity_2m.slice();
     const len   = tF.length;
 
-    // Rollendes Fenster: 24 h ab der aktuellen Stunde (über Mitternacht hinaus).
-    const nowDate = new Date();
-    const startIdx = Math.max(0, Math.min(nowDate.getHours(), len - 24));
+    // Rollendes Fenster: 24 h ab der Stunde, in der „jetzt" liegt (über Mitternacht
+    // hinaus). Der Startindex kommt aus den Zeitstempeln der Quelle, nicht aus der
+    // Browser-Stunde – sonst verschiebt sich alles bei fremder Zeitzone und an den
+    // Sommerzeit-Umstellungstagen. Reichen die Daten nicht für 24 h, wird das
+    // Fenster entsprechend kürzer.
+    const startIdx = Math.max(0, Math.min(nowIndex(timeF), len - 24));
+    const winLen   = Math.min(24, len - startIdx);
+    if (winLen < 2) {
+        setLoc('Zu wenige Prognosedaten für die nächsten Stunden – bitte später erneut versuchen.', true);
+        return;
+    }
 
     // Kalibrierung der Außentemperatur auf einen gemessenen Wert: konstanter
     // Offset über alle Stunden, Taupunkt/absolute Feuchte bleiben erhalten
@@ -854,7 +928,7 @@ function calculate() {
     const calOn = $('cal-on').checked;
     const calV  = parseFloat($('cal-t').value);
     let   calOffset = null;
-    if (calOn && !isNaN(calV) && startIdx < len) {
+    if (calOn && !isNaN(calV)) {
         calOffset = calV - tF[startIdx];
         for (let i = 0; i < len; i++) {
             const ah = absHum(tF[i], rhF[i]);
@@ -865,35 +939,40 @@ function calculate() {
     showCalNote(calOffset);
 
     // Simulation über den vollen Bereich (eingeschwungen), Anker = aktuelle Stunde
-    const sim = simulate(tF, rhF, userT, startIdx);
+    const sim = simulate(tF, rhF, userT, startIdx, timeF.map(tsHour));
     const ventF = sim.inT.map((_, i) => ventBenefit(sim.inT[i], tF[i], sim.inDP[i], sim.outDP[i]));
 
     // Anzeige-Fenster ausschneiden
-    const cut = a => a.slice(startIdx, startIdx + 24);
+    const cut = a => a.slice(startIdx, startIdx + winLen);
     const labels = cut(timeF).map(t => t.slice(11, 16));
     const inT  = cut(sim.inT),  inRH = cut(sim.inRH), inDP = cut(sim.inDP);
     const outT = cut(tF), outRH = cut(rhF), outDP = cut(sim.outDP);
     const inCO2 = cut(sim.inCO2);
     curVent = cut(ventF);
 
-    // Optional: CO₂-Kurve auf einen gemessenen Sensorwert kalibrieren – konstanter
-    // Offset, sodass „jetzt" (Index 0) dem Messwert entspricht (analog zur Temperatur).
+    // Optional: CO₂-Kurve auf einen gemessenen Sensorwert kalibrieren – skaliert
+    // wird der Überschuss über der Außenbasis (siehe co2Scale).
     const co2CalOn = $('co2cal-on').checked;
     const co2CalV  = parseFloat($('co2cal-v').value);
     const co2Calibrated = co2CalOn && !isNaN(co2CalV);
     if (co2Calibrated) {
-        const off = co2CalV - inCO2[0];
-        for (let i = 0; i < inCO2.length; i++) inCO2[i] += off;
+        const k = co2Scale(inCO2[0], co2CalV);
+        for (let i = 0; i < inCO2.length; i++) inCO2[i] = CO2_OUT + (inCO2[i] - CO2_OUT) * k;
     }
 
-    // Position der „Jetzt"-Linie im Fenster (Index 0 = aktuelle Stunde)
-    nowPos = (nowDate.getHours() - startIdx) + nowDate.getMinutes() / 60;
+    // Position der „Jetzt"-Linie: Bruchteil der Stunde seit Fensterbeginn
+    nowPos = Math.max(0, Math.min(winLen - 1, (Date.now() - Date.parse(timeF[startIdx])) / 36e5));
 
-    // Sonnenauf-/untergang auf Fenster-Position abbilden (eine je 24-h-Fenster)
+    // Sonnenauf-/untergang auf Fenster-Position abbilden (eine je 24-h-Fenster).
+    // Tag und Zeitzone kommen aus dem Zeitstempel des Fensterbeginns – also vom
+    // Ort, nicht vom Browser.
     sunMarks = [];
     if (loc) {
-        const st = sunTimes(nowDate, loc.lat, loc.lon);
-        const toPos = h => ((h - startIdx) % 24 + 24) % 24;
+        const anchor = timeF[startIdx];
+        const [yy, mm, dd] = anchor.slice(0, 10).split('-').map(Number);
+        const st = sunTimes(new Date(yy, mm - 1, dd), loc.lat, loc.lon, tsOffsetH(anchor));
+        const startHour = tsHour(anchor);
+        const toPos = t => ((t - startHour) % 24 + 24) % 24;
         if (st.rise != null) sunMarks.push({ pos: toPos(st.rise), type: 'rise', label: hm(st.rise) });
         if (st.set  != null) sunMarks.push({ pos: toPos(st.set),  type: 'set',  label: hm(st.set) });
     }
@@ -912,6 +991,7 @@ function calculate() {
 
     showRec(inT[0], outT[0], inDP[0], outDP[0]);
     showAirNote(inCO2[0]);
+
     const th = THEME();
     renderChart('t-chart', {
         labels, zones: true, unit: '°C', digits: 1, delta: 'Temp', yTitle: 'Temperatur (°C)',
@@ -1063,6 +1143,8 @@ function init() {
     setInterval(() => { if (loc) loadWx(loc.lat, loc.lon, loc.name); }, 30 * 60 * 1000);
 }
 
+// ══ APP-START – der Testharness in test/physics.test.mjs schneidet hier ab ══
+// Alles ab hier fasst das DOM an; darüber stehen nur Definitionen.
 $('t-in').addEventListener('keydown', e => { if (e.key === 'Enter') calculate(); });
 init();
 </script>

@@ -29,6 +29,15 @@ Einfach `index.html` im Browser öffnen – Live-Wetterdaten werden automatisch 
 
 Die Innen-Kurven sind eine **freilaufende Prognose „ohne Lüften"**: Sie zeigen, wie warm und feucht es würde, wenn die Fenster geschlossen blieben (Person/Geräte als Wärme- und Feuchtequelle, gedämpfte Kopplung an außen). Lüften lohnt sich dort, wo die Außenluft dieses Innenklima verbessert. Durch Lüften kühlt die Wohnung höchstens bis auf die gleichzeitige Außentemperatur ab. Alle Werte sind Schätzungen – die eingegebene Innentemperatur und die optionale Außentemperatur-Messung dienen als Kalibrierungsanker.
 
+## Zeitfenster & Zeitzonen
+
+Das 24-h-Fenster beginnt bei der Stunde, in der „jetzt" liegt. Welche Stunde das ist,
+wird **aus den Zeitstempeln der Wetterdaten** abgeleitet (beide Quellen liefern Ortszeit
+des abgefragten Ortes samt UTC-Versatz) – nicht aus der Uhr des Browsers. Dasselbe gilt
+für die Sonnenzeiten und das nächtliche CO₂-Lüftungsfenster. So stimmt die Zuordnung auch
+bei Orten in einer anderen Zeitzone und an den beiden Sommerzeit-Umstellungstagen, an denen
+der Tag 23 bzw. 25 Stunden hat.
+
 ## CO₂-Berechnung
 
 Das CO₂ wird über eine einfache **Massenbilanz** des Raums geschätzt: Personen erzeugen CO₂, der Luftwechsel führt es Richtung Außenluft ab.
@@ -60,7 +69,15 @@ Dadurch ergibt sich der typische **Sägezahn**: Tagsüber (Fenster zu, kleiner L
 
 **Einstufung (Status-Ampel & Schwellenlinien):** `< 1000 ppm` gut · `1000–1400 ppm` mäßig · `≥ 1400 ppm` stickig. Ab „stickig" erscheint zusätzlich der Hinweis, kurz stoßzulüften – unabhängig von der Hitze-Empfehlung, weil Stoßlüften das CO₂ in Minuten senkt, aber kaum Wärme hereinbringt.
 
-**Kalibrierung & Skalierung:** Die Schätzung skaliert linear mit der **Personenzahl**. Wer einen CO₂-Sensor hat, kann einen gemessenen Wert eingeben; dann wird die ganze Kurve per konstantem Offset so verschoben, dass „jetzt" dem Messwert entspricht (Anzeige wechselt zu „CO₂ gemessen").
+**Kalibrierung & Skalierung:** Die Schätzung skaliert linear mit der **Personenzahl**. Wer einen CO₂-Sensor hat, kann einen gemessenen Wert eingeben; dann wird der **Überschuss über der Außenbasis** so skaliert, dass „jetzt" dem Messwert entspricht (Anzeige wechselt zu „CO₂ gemessen"):
+
+```
+C_kal = C_out + (C − C_out) · k     mit  k = (Messwert − C_out) / (C_jetzt − C_out)
+```
+
+Skaliert wird also genau das, was unsicher ist – Belegung und Luftwechsel. Ein konstanter
+Offset wäre hier falsch: Die Kurve schwankt um ~500 ppm, ein tiefer Messwert würde die
+Nachtwerte unter die Außenbasis und sogar ins Negative drücken.
 
 > **Vorbehalt:** CO₂ ist – ohne Sensor – die unsicherste Größe der App. Sie hängt stark von der tatsächlichen Belegung (Personen, anwesend/abwesend, Türen) und den realen Lüftungszeiten ab; die Lüftungsfenster (22–08 Uhr) und ~100 m³ Raumvolumen sind fest angenommen. Die Werte sind als grobe Stickigkeits-Einschätzung zu verstehen.
 
